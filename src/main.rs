@@ -10,9 +10,11 @@ use std::io::{stdout, Write};
 use std::fs;
 use std::path::PathBuf;
 
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
-struct Args {
+pub struct Args {
     /// File to edit
     file: Option<PathBuf>,
     
@@ -45,7 +47,7 @@ impl TextBuffer {
         }
     }
 
-    pub fn from_file(path: &PathBuf) -> std::io::Result<Self> {
+    pub fn from_file(path: &PathBuf) -> Result<Self> {
         let contents = fs::read_to_string(path).unwrap_or_default();
         let lines = if contents.is_empty() {
             vec![String::new()]
@@ -73,8 +75,9 @@ impl TextBuffer {
     }
 
     pub fn insert_char(&mut self, ch: char) {
+        let cursor_x = self.cursor_x;
         let line = self.current_line_mut();
-        line.insert(self.cursor_x, ch);
+        line.insert(cursor_x, ch);
         self.cursor_x += 1;
         self.modified = true;
     }
@@ -93,8 +96,9 @@ impl TextBuffer {
 
     pub fn delete_char(&mut self) {
         if self.cursor_x > 0 {
+            let cursor_x = self.cursor_x;
             let line = self.current_line_mut();
-            line.remove(self.cursor_x - 1);
+            line.remove(cursor_x - 1);
             self.cursor_x -= 1;
             self.modified = true;
         } else if self.cursor_y > 0 {
@@ -388,6 +392,7 @@ impl Editor {
         
         let modified_indicator = if self.buffer.modified { " [Modified]" } else { "" };
         let status = format!(" {} - {} lines{}", filename, self.buffer.lines.len(), modified_indicator);
+        let status_len = status.len();
         
         execute!(
             stdout(),
@@ -397,7 +402,7 @@ impl Editor {
         )?;
         
         // Fill rest of status bar
-        let remaining = width as usize - status.len();
+        let remaining = width as usize - status_len;
         if remaining > 0 {
             execute!(stdout(), style::Print(" ".repeat(remaining)))?;
         }
