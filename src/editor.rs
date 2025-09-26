@@ -212,20 +212,41 @@ impl Editor {
         Ok(())
     }
 
+    // 在顶部绘制软件名称和版本号
+    fn draw_title_bar(&self) -> Result<()> {
+        use std::io::stdout;
+        use crossterm::{cursor, style, execute};
+        use crossterm::style::{Color, ResetColor, SetForegroundColor, SetBackgroundColor};
+    
+        let title = format!("Rsnano v{} ", env!("CARGO_PKG_VERSION"));
+        execute!(
+            stdout(),
+            cursor::MoveTo(0, 0),
+            SetBackgroundColor(Color::White),
+            SetForegroundColor(Color::Black),
+            style::Print(title),
+            ResetColor
+        )?;
+        Ok(())
+    }
+
     /// 屏幕刷新，主光标高亮，支持中文
     fn refresh_screen(&mut self) -> Result<()> {
         use std::io::stdout;
         use crossterm::{cursor, style, terminal, execute};
         use crossterm::style::{Color, ResetColor, SetForegroundColor, SetBackgroundColor};
         use crossterm::terminal::ClearType;
+
+        self.draw_title_bar()?;
     
-        execute!(stdout(), cursor::MoveTo(0, 0))?;
+        
+        execute!(stdout(), cursor::MoveTo(0, 1))?;
         let (width, height) = self.terminal_size;
-        let editor_height = height - 2;
+        let editor_height = height - 3; // 顶栏+状态栏+帮助栏共3行
     
         for screen_row in 0..editor_height {
-            let file_row = screen_row as usize + self.buffer.offset_y;
-            execute!(stdout(), terminal::Clear(ClearType::CurrentLine))?;
+        let file_row = screen_row as usize + self.buffer.offset_y;
+        execute!(stdout(), cursor::MoveTo(0, screen_row as u16 + 1))?; // +1，编辑区从第1行开始
             if file_row < self.buffer.lines.len() {
                 let line = &self.buffer.lines[file_row];
                 let line_number_width = if self.show_line_numbers { 4 } else { 0 };
@@ -290,7 +311,7 @@ impl Editor {
         // 主光标定位
         let line_number_width = if self.show_line_numbers { 4 } else { 0 };
         let main_screen_x = (self.buffer.cursor_x - self.buffer.offset_x + line_number_width) as u16;
-        let main_screen_y = (self.buffer.cursor_y - self.buffer.offset_y) as u16;
+        let main_screen_y = (self.buffer.cursor_y - self.buffer.offset_y + 1) as u16; // +1
         execute!(stdout(), cursor::MoveTo(main_screen_x, main_screen_y))?;
         stdout().flush()?;
         Ok(())
