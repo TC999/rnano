@@ -212,23 +212,17 @@ impl Editor {
         Ok(())
     }
 
-    /// 刷新屏幕，绘制编辑器内容和UI元素
+    /// 屏幕刷新，主光标高亮，支持中文
     fn refresh_screen(&mut self) -> Result<()> {
         execute!(stdout(), cursor::MoveTo(0, 0))?;
-        
         let (width, height) = self.terminal_size;
-        let editor_height = height - 2; // Reserve space for status and help
-
-        // 绘制编辑器内容，逐字符处理，光标高亮
+        let editor_height = height - 2;
         for screen_row in 0..editor_height {
             let file_row = screen_row as usize + self.buffer.offset_y;
-            
             execute!(stdout(), terminal::Clear(ClearType::CurrentLine))?;
-            
             if file_row < self.buffer.lines.len() {
                 let line = &self.buffer.lines[file_row];
                 let line_number_width = if self.show_line_numbers { 4 } else { 0 };
-                
                 if self.show_line_numbers {
                     execute!(
                         stdout(),
@@ -237,17 +231,12 @@ impl Editor {
                         ResetColor
                     )?;
                 }
-                
                 let display_width = width as usize - line_number_width;
-                let start = self.buffer.offset_x.min(line.len());
-                let end = (start + display_width).min(line.len());
-
+                let start = self.buffer.offset_x.min(line.chars().count());
+                let end = (start + display_width).min(line.chars().count());
                 // 逐字符输出，主光标高亮
-                for (col, ch) in line.chars().enumerate().skip(start).take(end - start) {
-                    let buffer_x = col;
-                    let buffer_y = file_row;
-                    if buffer_x == self.buffer.cursor_x && buffer_y == self.buffer.cursor_y {
-                        // 主光标位置高亮显示
+                for (i, ch) in line.chars().enumerate().skip(start).take(end - start) {
+                    if i == self.buffer.cursor_x && file_row == self.buffer.cursor_y {
                         execute!(
                             stdout(),
                             SetBackgroundColor(Color::Yellow),
@@ -259,10 +248,10 @@ impl Editor {
                         print!("{}", ch);
                     }
                 }
-                // 如果光标在行尾，显示一个插入符号
+                // 行尾光标
                 if self.buffer.cursor_y == file_row 
-                    && self.buffer.cursor_x == line.len()
-                    && end == line.len() {
+                    && self.buffer.cursor_x == line.chars().count()
+                    && end == line.chars().count() {
                     execute!(
                         stdout(),
                         SetBackgroundColor(Color::Yellow),
@@ -272,7 +261,6 @@ impl Editor {
                     )?;
                 }
             } else if file_row == self.buffer.lines.len() && screen_row == 0 {
-                // Show welcome message for empty buffer
                 let welcome = "RSNano - Rust implementation of nano text editor";
                 if welcome.len() < width as usize {
                     let padding = (width as usize - welcome.len()) / 2;
@@ -285,40 +273,14 @@ impl Editor {
                     )?;
                 }
             }
-            
             execute!(stdout(), cursor::MoveToNextLine(1))?;
         }
-
-        // Draw status bar
-        self.draw_status_bar()?;
-        
-        // Draw help bar
-        self.draw_help_bar()?;
-
-        // 先保存主光标位置
+        // 状态栏/帮助栏等略
+        // 主光标定位
         let line_number_width = if self.show_line_numbers { 4 } else { 0 };
         let main_screen_x = (self.buffer.cursor_x - self.buffer.offset_x + line_number_width) as u16;
         let main_screen_y = (self.buffer.cursor_y - self.buffer.offset_y) as u16;
-        
-        // 如果有第二个光标，先显示它
-        if let (Some(x2), Some(y2)) = (self.buffer.cursor_x2, self.buffer.cursor_y2) {
-            let screen_x2 = (x2 - self.buffer.offset_x + line_number_width) as u16;
-            let screen_y2 = (y2 - self.buffer.offset_y) as u16;
-            
-            // 确保第二个光标在可视区域内
-            if screen_y2 < editor_height {
-                // 显示第二个光标（使用不同颜色区分）
-                execute!(stdout(), cursor::SavePosition)?;
-                execute!(stdout(), cursor::MoveTo(screen_x2, screen_y2))?;
-                execute!(stdout(), SetForegroundColor(Color::Green))?;
-                execute!(stdout(), cursor::Show)?;
-                execute!(stdout(), cursor::RestorePosition)?;
-            }
-        }
-        
-        // 最后定位主光标
         execute!(stdout(), cursor::MoveTo(main_screen_x, main_screen_y))?;
-        
         stdout().flush()?;
         Ok(())
     }

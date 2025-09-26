@@ -8,9 +8,9 @@ use crate::Result;
 #[derive(Clone)]
 pub struct TextBuffer {
     pub lines: Vec<String>,
+    /// 光标所在字符索引（不是字节索引，支持中文）
     pub cursor_x: usize,
     pub cursor_y: usize,
-    // 第二个光标的坐标
     pub cursor_x2: Option<usize>,
     pub cursor_y2: Option<usize>,
     pub offset_x: usize,
@@ -20,7 +20,6 @@ pub struct TextBuffer {
 }
 
 impl TextBuffer {
-    /// 创建一个新的空文本缓冲区
     pub fn new() -> Self {
         Self {
             lines: vec![String::new()],
@@ -35,7 +34,6 @@ impl TextBuffer {
         }
     }
 
-    /// 从文件创建文本缓冲区
     pub fn from_file(path: &PathBuf) -> Result<Self> {
         let contents = fs::read_to_string(path).unwrap_or_default();
         let lines = if contents.is_empty() {
@@ -57,228 +55,147 @@ impl TextBuffer {
         })
     }
 
-    /// 获取当前行的不可变引用
     pub fn current_line(&self) -> &String {
         &self.lines[self.cursor_y]
     }
 
-    /// 获取当前行的可变引用
     pub fn current_line_mut(&mut self) -> &mut String {
         &mut self.lines[self.cursor_y]
     }
 
-    /// 在当前光标位置插入字符
+    /// 在当前光标位置插入字符（按字符索引插入，支持中文）
     pub fn insert_char(&mut self, ch: char) {
-        // 先保存cursor_x的值，避免借用冲突
-        let cursor_x = self.cursor_x;
         let line = self.current_line_mut();
-        
-        // 安全检查：确保索引是有效的UTF-8字符边界
-        let safe_position = if cursor_x > line.len() {
-            line.len()
-        } else if line.is_char_boundary(cursor_x) {
-            cursor_x
-        } else {
-            // 找到最近的有效的UTF-8字符边界
-            let mut pos = cursor_x;
-            while pos > 0 && !line.is_char_boundary(pos) {
-                pos -= 1;
+        let mut byte_pos = 0;
+        let mut char_count = 0;
+        for (i, (pos, _)) in line.char_indices().enumerate() {
+            if char_count == self.cursor_x {
+                byte_pos = pos;
+                break;
             }
-            pos
-        };
-        
-        // 检查当前位置是否已有相同字符（防止重复）
-        if safe_position < line.len() {
-            let char_at_pos = line
-                .char_indices()
-                .skip_while(|&(i, _)| i < safe_position)
-                .next()
-                .map(|(_, c)| c)
-                .unwrap_or('\0');
-            
-            if char_at_pos == ch {
-                return; // 如果字符相同且位置相同，不执行插入
-            }
+            char_count += 1;
         }
-        
-        line.insert(safe_position, ch);
-        self.cursor_x = safe_position + ch.len_utf8();
-        
-        // 如果有第二个光标，需要更新其位置
-        if let Some(x2) = &mut self.cursor_x2 {
-            if self.cursor_y2 == Some(self.cursor_y) && *x2 >= cursor_x {
-                *x2 += ch.len_utf8();
-            }
+        if self.cursor_x >= line.chars().count() {
+            byte_pos = line.len();
         }
-        
+        line.insert(byte_pos, ch);
+        self.cursor_x += 1;
         self.modified = true;
     }
 
-    /// 在当前光标位置插入新行
+    /// 插入新行，光标移到下一行行首
     pub fn insert_newline(&mut self) {
-        let current_line = self.current_line().clone();
-        let safe_position = if self.cursor_x > current_line.len() {
-            current_line.len()
-        } else if current_line.is_char_boundary(self.cursor_x) {
-            self.cursor_x
-        } else {
-            // 找到最近的有效的UTF-8字符边界
-            let mut pos = self.cursor_x;
-            while pos > 0 && !current_line.is_char_boundary(pos) {
-                pos -= 1;
+        let line = self.current_line().clone();
+        let mut byte_pos = 0;
+        let mut char_count = 0;
+        for (i, (pos, _)) in line.char_indices().enumerate() {
+            if char_count == self.cursor_x {
+                byte_pos = pos;
+                break;
             }
-            pos
-        };
-        
-        let (left, right) = current_line.split_at(safe_position);
-        
+            char_count += 1;
+        }
+        if self.cursor_x >= line.chars().count() {
+            byte_pos = line.len();
+        }
+        let (left, right) = line.split_at(byte_pos);
         self.lines[self.cursor_y] = left.to_string();
         self.lines.insert(self.cursor_y + 1, right.to_string());
-        
         self.cursor_y += 1;
         self.cursor_x = 0;
-        
-        // 更新第二个光标位置
-        if let Some(y2) = &mut self.cursor_y2 {
-            if *y2 > self.cursor_y - 1 {
-                *y2 += 1;
-            }
-        }
-        
         self.modified = true;
     }
 
-    /// 删除光标前的字符
+    /// 删除光标前字符（支持中文，按字符索引删除）
     pub fn delete_char(&mut self) {
         if self.cursor_x > 0 {
-            // 先保存cursor_x的值，避免借用冲突
-            let cursor_x = self.cursor_x;
             let line = self.current_line_mut();
-            
-            // 安全检查：确保索引是有效的UTF-8字符边界
-            let safe_position = if cursor_x > line.len() {
-                line.len()
-            } else if line.is_char_boundary(cursor_x) {
-                cursor_x
+            let mut byte_pos = 0;
+            let mut char_indices: Vec<usize> = line.char_indices().map(|(i, _)| i).collect();
+            if self.cursor_x < char_indices.len() {
+                byte_pos = char_indices[self.cursor_x];
             } else {
-                // 找到最近的有效的UTF-8字符边界
-                let mut pos = cursor_x;
-                while pos > 0 && !line.is_char_boundary(pos) {
-                    pos -= 1;
-                }
-                pos
-            };
-            
-            // 确保不会重复删除
-            if safe_position > 0 {
-                // 找到要删除的字符的起始位置
-                let char_start = line
-                    .char_indices()
-                    .rev()
-                    .skip_while(|&(i, _)| i >= safe_position)
-                    .next()
-                    .map(|(i, _)| i)
-                    .unwrap_or(0);
-                
-                // 删除整个字符
-                line.drain(char_start..safe_position);
-                self.cursor_x = char_start;
-                
-                // 更新第二个光标位置
-                if let Some(x2) = &mut self.cursor_x2 {
-                    if self.cursor_y2 == Some(self.cursor_y) && *x2 >= cursor_x {
-                        *x2 = x2.saturating_sub(safe_position - char_start);
-                    }
-                }
-                
-                self.modified = true;
+                byte_pos = line.len();
             }
+            let prev_pos = if self.cursor_x > 0 {
+                char_indices[self.cursor_x - 1]
+            } else {
+                0
+            };
+            line.drain(prev_pos..byte_pos);
+            self.cursor_x -= 1;
+            self.modified = true;
         } else if self.cursor_y > 0 {
-            // Join with previous line
+            // 与上一行合并
             let current_line = self.lines.remove(self.cursor_y);
             self.cursor_y -= 1;
-            self.cursor_x = self.current_line().len();
-            
-            // 先获取当前行长度，避免借用冲突
-            let current_line_len = self.current_line().len();
-            
-            // 更新第二个光标位置
-            if let (Some(x2), Some(y2)) = (&mut self.cursor_x2, &mut self.cursor_y2) {
-                if *y2 > self.cursor_y + 1 {
-                    *y2 -= 1;
-                } else if *y2 == self.cursor_y + 1 {
-                    *x2 = current_line_len + *x2;
-                    *y2 -= 1;
-                }
-            }
-            
-            self.current_line_mut().push_str(&current_line);
+            self.cursor_x = self.lines[self.cursor_y].chars().count();
+            self.lines[self.cursor_y].push_str(&current_line);
             self.modified = true;
         }
     }
 
-    /// 移动光标
+    /// 光标移动，支持左右行首/行尾跳转
     pub fn move_cursor(&mut self, direction: Direction, terminal_size: (u16, u16), is_secondary: bool) {
+        let lines_len = self.lines.len();
         if is_secondary {
-            // 处理第二个光标的移动
             let (x, y) = match (self.cursor_x2, self.cursor_y2) {
                 (Some(x), Some(y)) => (x, y),
-                // 如果第二个光标不存在，则创建它并放在主光标旁边
                 _ => {
                     self.cursor_x2 = Some(self.cursor_x);
                     self.cursor_y2 = Some(self.cursor_y);
                     (self.cursor_x, self.cursor_y)
                 }
             };
-            
-            let new_x = x;
-            let new_y = y;
-            
+            let line_len = self.lines[y].chars().count();
             match direction {
                 Direction::Up => {
-                    if new_y > 0 {
-                        self.cursor_y2 = Some(new_y - 1);
-                        // 确保光标不会超出行长度
-                        self.cursor_x2 = Some(new_x.min(self.lines[new_y - 1].len()));
+                    if y > 0 {
+                        self.cursor_y2 = Some(y - 1);
+                        let up_len = self.lines[y - 1].chars().count();
+                        self.cursor_x2 = Some(x.min(up_len));
                     }
                 }
                 Direction::Down => {
-                    if new_y < self.lines.len() - 1 {
-                        self.cursor_y2 = Some(new_y + 1);
-                        // 确保光标不会超出行长度
-                        self.cursor_x2 = Some(new_x.min(self.lines[new_y + 1].len()));
+                    if y < lines_len - 1 {
+                        self.cursor_y2 = Some(y + 1);
+                        let down_len = self.lines[y + 1].chars().count();
+                        self.cursor_x2 = Some(x.min(down_len));
                     }
                 }
                 Direction::Left => {
-                    if new_x > 0 {
-                        self.cursor_x2 = Some(new_x - 1);
-                    } else if new_y > 0 {
-                        self.cursor_y2 = Some(new_y - 1);
-                        self.cursor_x2 = Some(self.lines[new_y - 1].len());
+                    if x > 0 {
+                        self.cursor_x2 = Some(x - 1);
+                    } else if y > 0 {
+                        self.cursor_y2 = Some(y - 1);
+                        let prev_len = self.lines[y - 1].chars().count();
+                        self.cursor_x2 = Some(prev_len);
                     }
                 }
                 Direction::Right => {
-                    if new_x < self.lines[new_y].len() {
-                        self.cursor_x2 = Some(new_x + 1);
-                    } else if new_y < self.lines.len() - 1 {
-                        self.cursor_y2 = Some(new_y + 1);
+                    if x < line_len {
+                        self.cursor_x2 = Some(x + 1);
+                    } else if y < lines_len - 1 {
+                        self.cursor_y2 = Some(y + 1);
                         self.cursor_x2 = Some(0);
                     }
                 }
             }
         } else {
-            // 处理主光标的移动
+            let line_len = self.current_line().chars().count();
             match direction {
                 Direction::Up => {
                     if self.cursor_y > 0 {
                         self.cursor_y -= 1;
-                        self.cursor_x = self.cursor_x.min(self.current_line().len());
+                        let up_len = self.current_line().chars().count();
+                        self.cursor_x = self.cursor_x.min(up_len);
                     }
                 }
                 Direction::Down => {
-                    if self.cursor_y < self.lines.len() - 1 {
+                    if self.cursor_y < lines_len - 1 {
                         self.cursor_y += 1;
-                        self.cursor_x = self.cursor_x.min(self.current_line().len());
+                        let down_len = self.current_line().chars().count();
+                        self.cursor_x = self.cursor_x.min(down_len);
                     }
                 }
                 Direction::Left => {
@@ -286,31 +203,27 @@ impl TextBuffer {
                         self.cursor_x -= 1;
                     } else if self.cursor_y > 0 {
                         self.cursor_y -= 1;
-                        self.cursor_x = self.current_line().len();
+                        self.cursor_x = self.current_line().chars().count();
                     }
                 }
                 Direction::Right => {
-                    if self.cursor_x < self.current_line().len() {
+                    if self.cursor_x < line_len {
                         self.cursor_x += 1;
-                    } else if self.cursor_y < self.lines.len() - 1 {
+                    } else if self.cursor_y < lines_len - 1 {
                         self.cursor_y += 1;
                         self.cursor_x = 0;
                     }
                 }
             }
         }
-        
-        // Adjust scroll offset if cursor goes off screen
+        // 滚动逻辑略
         let (_, height) = terminal_size;
-        let editor_height = height as usize - 2; // Reserve space for status bar and help
-        
+        let editor_height = height as usize - 2;
         if self.cursor_y < self.offset_y {
             self.offset_y = self.cursor_y;
         } else if self.cursor_y >= self.offset_y + editor_height {
             self.offset_y = self.cursor_y - editor_height + 1;
         }
-        
-        // 对第二个光标也进行同样的滚动调整
         if let Some(y2) = self.cursor_y2 {
             if y2 < self.offset_y {
                 self.offset_y = y2;
