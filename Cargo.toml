@@ -1,0 +1,18 @@
+[package]
+name = "rsnano"
+version = "0.1.0"
+edition = "2021"
+authors = ["TC999"]
+description = "A nano-like text editor implemented in Rust"
+license = "GPL-3.0"
+repository = "https://github.com/TC999/rsnano"
+keywords = ["editor", "terminal", "nano", "text"]
+categories = ["command-line-utilities", "text-editors"]
+
+[[bin]]
+name = "rsnano"
+path = "src/main.rs"
+
+[dependencies]
+crossterm = "0.27"
+clap = { version = "4.0", features = ["derive"] }
