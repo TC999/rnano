@@ -75,8 +75,15 @@ impl TextBuffer {
     }
 
     pub fn insert_char(&mut self, ch: char) {
+        // 先保存cursor_x的值，避免借用冲突
         let cursor_x = self.cursor_x;
         let line = self.current_line_mut();
+        
+        // 检查当前位置是否已有相同字符（防止重复）
+        if cursor_x < line.len() && line.chars().nth(cursor_x).unwrap_or('\0') == ch {
+            return; // 如果字符相同且位置相同，不执行插入
+        }
+        
         line.insert(cursor_x, ch);
         self.cursor_x += 1;
         self.modified = true;
@@ -96,11 +103,16 @@ impl TextBuffer {
 
     pub fn delete_char(&mut self) {
         if self.cursor_x > 0 {
+            // 先保存cursor_x的值，避免借用冲突
             let cursor_x = self.cursor_x;
             let line = self.current_line_mut();
-            line.remove(cursor_x - 1);
-            self.cursor_x -= 1;
-            self.modified = true;
+            
+            // 确保不会重复删除
+            if cursor_x <= line.len() {
+                line.remove(cursor_x - 1);
+                self.cursor_x -= 1;
+                self.modified = true;
+            }
         } else if self.cursor_y > 0 {
             // Join with previous line
             let current_line = self.lines.remove(self.cursor_y);
@@ -221,8 +233,17 @@ impl Editor {
                 break;
             }
 
-            if let Event::Key(key_event) = event::read()? {
-                self.process_key(key_event)?;
+            // 使用事件轮询而非阻塞读取
+            // 这样可以更好地控制事件处理的频率
+            if event::poll(std::time::Duration::from_millis(50))? {
+                if let Event::Key(key_event) = event::read()? {
+                    // 确保每个按键事件只被处理一次
+                    self.process_key(key_event)?;
+                    // 清除状态消息
+                    if !self.status_message.is_empty() {
+                        self.status_message.clear();
+                    }
+                }
             }
 
             // Update terminal size if changed
@@ -235,6 +256,9 @@ impl Editor {
     }
 
     fn process_key(&mut self, key_event: KeyEvent) -> Result<()> {
+        // 记录按键处理，用于调试
+        // println!("Processing key: {:?}", key_event);
+        
         match key_event {
             KeyEvent {
                 code: KeyCode::Char('x'),
@@ -301,6 +325,7 @@ impl Editor {
                 modifiers: KeyModifiers::NONE,
                 ..
             } => {
+                // 直接调用delete_char，确保不会被重复调用
                 self.buffer.delete_char();
             }
             KeyEvent {
@@ -308,6 +333,7 @@ impl Editor {
                 modifiers,
                 ..
             } if modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::SHIFT => {
+                // 直接调用insert_char，确保不会被重复调用
                 self.buffer.insert_char(ch);
             }
             _ => {}
