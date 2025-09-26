@@ -73,18 +73,41 @@ impl TextBuffer {
         let cursor_x = self.cursor_x;
         let line = self.current_line_mut();
         
+        // 安全检查：确保索引是有效的UTF-8字符边界
+        let safe_position = if cursor_x > line.len() {
+            line.len()
+        } else if line.is_char_boundary(cursor_x) {
+            cursor_x
+        } else {
+            // 找到最近的有效的UTF-8字符边界
+            let mut pos = cursor_x;
+            while pos > 0 && !line.is_char_boundary(pos) {
+                pos -= 1;
+            }
+            pos
+        };
+        
         // 检查当前位置是否已有相同字符（防止重复）
-        if cursor_x < line.len() && line.chars().nth(cursor_x).unwrap_or('\0') == ch {
-            return; // 如果字符相同且位置相同，不执行插入
+        if safe_position < line.len() {
+            let char_at_pos = line
+                .char_indices()
+                .skip_while(|&(i, _)| i < safe_position)
+                .next()
+                .map(|(_, c)| c)
+                .unwrap_or('\0');
+            
+            if char_at_pos == ch {
+                return; // 如果字符相同且位置相同，不执行插入
+            }
         }
         
-        line.insert(cursor_x, ch);
-        self.cursor_x += 1;
+        line.insert(safe_position, ch);
+        self.cursor_x = safe_position + ch.len_utf8();
         
         // 如果有第二个光标，需要更新其位置
         if let Some(x2) = &mut self.cursor_x2 {
             if self.cursor_y2 == Some(self.cursor_y) && *x2 >= cursor_x {
-                *x2 += 1;
+                *x2 += ch.len_utf8();
             }
         }
         
@@ -94,7 +117,20 @@ impl TextBuffer {
     /// 在当前光标位置插入新行
     pub fn insert_newline(&mut self) {
         let current_line = self.current_line().clone();
-        let (left, right) = current_line.split_at(self.cursor_x);
+        let safe_position = if self.cursor_x > current_line.len() {
+            current_line.len()
+        } else if current_line.is_char_boundary(self.cursor_x) {
+            self.cursor_x
+        } else {
+            // 找到最近的有效的UTF-8字符边界
+            let mut pos = self.cursor_x;
+            while pos > 0 && !current_line.is_char_boundary(pos) {
+                pos -= 1;
+            }
+            pos
+        };
+        
+        let (left, right) = current_line.split_at(safe_position);
         
         self.lines[self.cursor_y] = left.to_string();
         self.lines.insert(self.cursor_y + 1, right.to_string());
@@ -119,15 +155,39 @@ impl TextBuffer {
             let cursor_x = self.cursor_x;
             let line = self.current_line_mut();
             
+            // 安全检查：确保索引是有效的UTF-8字符边界
+            let safe_position = if cursor_x > line.len() {
+                line.len()
+            } else if line.is_char_boundary(cursor_x) {
+                cursor_x
+            } else {
+                // 找到最近的有效的UTF-8字符边界
+                let mut pos = cursor_x;
+                while pos > 0 && !line.is_char_boundary(pos) {
+                    pos -= 1;
+                }
+                pos
+            };
+            
             // 确保不会重复删除
-            if cursor_x <= line.len() {
-                line.remove(cursor_x - 1);
-                self.cursor_x -= 1;
+            if safe_position > 0 {
+                // 找到要删除的字符的起始位置
+                let char_start = line
+                    .char_indices()
+                    .rev()
+                    .skip_while(|&(i, _)| i >= safe_position)
+                    .next()
+                    .map(|(i, _)| i)
+                    .unwrap_or(0);
+                
+                // 删除整个字符
+                line.drain(char_start..safe_position);
+                self.cursor_x = char_start;
                 
                 // 更新第二个光标位置
                 if let Some(x2) = &mut self.cursor_x2 {
                     if self.cursor_y2 == Some(self.cursor_y) && *x2 >= cursor_x {
-                        *x2 = x2.saturating_sub(1);
+                        *x2 = x2.saturating_sub(safe_position - char_start);
                     }
                 }
                 
