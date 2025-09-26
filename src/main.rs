@@ -28,6 +28,9 @@ pub struct TextBuffer {
     lines: Vec<String>,
     cursor_x: usize,
     cursor_y: usize,
+    // 第二个光标的坐标
+    cursor_x2: Option<usize>,
+    cursor_y2: Option<usize>,
     offset_x: usize,
     offset_y: usize,
     modified: bool,
@@ -40,6 +43,8 @@ impl TextBuffer {
             lines: vec![String::new()],
             cursor_x: 0,
             cursor_y: 0,
+            cursor_x2: None,
+            cursor_y2: None,
             offset_x: 0,
             offset_y: 0,
             modified: false,
@@ -59,6 +64,8 @@ impl TextBuffer {
             lines,
             cursor_x: 0,
             cursor_y: 0,
+            cursor_x2: None,
+            cursor_y2: None,
             offset_x: 0,
             offset_y: 0,
             modified: false,
@@ -86,6 +93,14 @@ impl TextBuffer {
         
         line.insert(cursor_x, ch);
         self.cursor_x += 1;
+        
+        // 如果有第二个光标，需要更新其位置
+        if let Some(x2) = &mut self.cursor_x2 {
+            if self.cursor_y2 == Some(self.cursor_y) && *x2 >= cursor_x {
+                *x2 += 1;
+            }
+        }
+        
         self.modified = true;
     }
 
@@ -98,6 +113,14 @@ impl TextBuffer {
         
         self.cursor_y += 1;
         self.cursor_x = 0;
+        
+        // 更新第二个光标位置
+        if let Some(y2) = &mut self.cursor_y2 {
+            if *y2 > self.cursor_y - 1 {
+                *y2 += 1;
+            }
+        }
+        
         self.modified = true;
     }
 
@@ -111,6 +134,14 @@ impl TextBuffer {
             if cursor_x <= line.len() {
                 line.remove(cursor_x - 1);
                 self.cursor_x -= 1;
+                
+                // 更新第二个光标位置
+                if let Some(x2) = &mut self.cursor_x2 {
+                    if self.cursor_y2 == Some(self.cursor_y) && *x2 >= cursor_x {
+                        *x2 = x2.saturating_sub(1);
+                    }
+                }
+                
                 self.modified = true;
             }
         } else if self.cursor_y > 0 {
@@ -118,39 +149,103 @@ impl TextBuffer {
             let current_line = self.lines.remove(self.cursor_y);
             self.cursor_y -= 1;
             self.cursor_x = self.current_line().len();
+            
+            // 先获取当前行长度，避免借用冲突
+            let current_line_len = self.current_line().len();
+            
+            // 更新第二个光标位置
+            if let (Some(x2), Some(y2)) = (&mut self.cursor_x2, &mut self.cursor_y2) {
+                if *y2 > self.cursor_y + 1 {
+                    *y2 -= 1;
+                } else if *y2 == self.cursor_y + 1 {
+                    *x2 = current_line_len + *x2;
+                    *y2 -= 1;
+                }
+            }
+            
             self.current_line_mut().push_str(&current_line);
             self.modified = true;
         }
     }
 
-    pub fn move_cursor(&mut self, direction: Direction, terminal_size: (u16, u16)) {
-        match direction {
-            Direction::Up => {
-                if self.cursor_y > 0 {
-                    self.cursor_y -= 1;
-                    self.cursor_x = self.cursor_x.min(self.current_line().len());
+    pub fn move_cursor(&mut self, direction: Direction, terminal_size: (u16, u16), is_secondary: bool) {
+        if is_secondary {
+            // 处理第二个光标的移动
+            let (x, y) = match (self.cursor_x2, self.cursor_y2) {
+                (Some(x), Some(y)) => (x, y),
+                // 如果第二个光标不存在，则创建它并放在主光标旁边
+                _ => {
+                    self.cursor_x2 = Some(self.cursor_x);
+                    self.cursor_y2 = Some(self.cursor_y);
+                    (self.cursor_x, self.cursor_y)
+                }
+            };
+            
+            let new_x = x;
+            let new_y = y;
+            
+            match direction {
+                Direction::Up => {
+                    if new_y > 0 {
+                        self.cursor_y2 = Some(new_y - 1);
+                        // 确保光标不会超出行长度
+                        self.cursor_x2 = Some(new_x.min(self.lines[new_y - 1].len()));
+                    }
+                }
+                Direction::Down => {
+                    if new_y < self.lines.len() - 1 {
+                        self.cursor_y2 = Some(new_y + 1);
+                        // 确保光标不会超出行长度
+                        self.cursor_x2 = Some(new_x.min(self.lines[new_y + 1].len()));
+                    }
+                }
+                Direction::Left => {
+                    if new_x > 0 {
+                        self.cursor_x2 = Some(new_x - 1);
+                    } else if new_y > 0 {
+                        self.cursor_y2 = Some(new_y - 1);
+                        self.cursor_x2 = Some(self.lines[new_y - 1].len());
+                    }
+                }
+                Direction::Right => {
+                    if new_x < self.lines[new_y].len() {
+                        self.cursor_x2 = Some(new_x + 1);
+                    } else if new_y < self.lines.len() - 1 {
+                        self.cursor_y2 = Some(new_y + 1);
+                        self.cursor_x2 = Some(0);
+                    }
                 }
             }
-            Direction::Down => {
-                if self.cursor_y < self.lines.len() - 1 {
-                    self.cursor_y += 1;
-                    self.cursor_x = self.cursor_x.min(self.current_line().len());
+        } else {
+            // 处理主光标的移动
+            match direction {
+                Direction::Up => {
+                    if self.cursor_y > 0 {
+                        self.cursor_y -= 1;
+                        self.cursor_x = self.cursor_x.min(self.current_line().len());
+                    }
                 }
-            }
-            Direction::Left => {
-                if self.cursor_x > 0 {
-                    self.cursor_x -= 1;
-                } else if self.cursor_y > 0 {
-                    self.cursor_y -= 1;
-                    self.cursor_x = self.current_line().len();
+                Direction::Down => {
+                    if self.cursor_y < self.lines.len() - 1 {
+                        self.cursor_y += 1;
+                        self.cursor_x = self.cursor_x.min(self.current_line().len());
+                    }
                 }
-            }
-            Direction::Right => {
-                if self.cursor_x < self.current_line().len() {
-                    self.cursor_x += 1;
-                } else if self.cursor_y < self.lines.len() - 1 {
-                    self.cursor_y += 1;
-                    self.cursor_x = 0;
+                Direction::Left => {
+                    if self.cursor_x > 0 {
+                        self.cursor_x -= 1;
+                    } else if self.cursor_y > 0 {
+                        self.cursor_y -= 1;
+                        self.cursor_x = self.current_line().len();
+                    }
+                }
+                Direction::Right => {
+                    if self.cursor_x < self.current_line().len() {
+                        self.cursor_x += 1;
+                    } else if self.cursor_y < self.lines.len() - 1 {
+                        self.cursor_y += 1;
+                        self.cursor_x = 0;
+                    }
                 }
             }
         }
@@ -164,6 +259,15 @@ impl TextBuffer {
         } else if self.cursor_y >= self.offset_y + editor_height {
             self.offset_y = self.cursor_y - editor_height + 1;
         }
+        
+        // 对第二个光标也进行同样的滚动调整
+        if let Some(y2) = self.cursor_y2 {
+            if y2 < self.offset_y {
+                self.offset_y = y2;
+            } else if y2 >= self.offset_y + editor_height {
+                self.offset_y = y2 - editor_height + 1;
+            }
+        }
     }
 
     pub fn save(&mut self) -> Result<bool> {
@@ -176,7 +280,46 @@ impl TextBuffer {
             Ok(false)
         }
     }
+    
+    // 切换第二个光标的显示/隐藏
+    pub fn toggle_secondary_cursor(&mut self) {
+        if self.cursor_x2.is_some() && self.cursor_y2.is_some() {
+            // 隐藏第二个光标
+            self.cursor_x2 = None;
+            self.cursor_y2 = None;
+        } else {
+            // 显示第二个光标，初始位置与主光标相同
+            self.cursor_x2 = Some(self.cursor_x);
+            self.cursor_y2 = Some(self.cursor_y);
+        }
+    }
+    
+    // 同时在两个光标位置插入字符
+    pub fn insert_char_at_both_cursors(&mut self, ch: char) {
+        // 先在主光标位置插入
+        self.insert_char(ch);
+        
+        // 再在第二个光标位置插入
+        if let (Some(x2), Some(y2)) = (self.cursor_x2, self.cursor_y2) {
+            // 保存当前主光标位置
+            let main_x = self.cursor_x;
+            let main_y = self.cursor_y;
+            
+            // 临时切换到第二个光标位置
+            self.cursor_x = x2;
+            self.cursor_y = y2;
+            
+            // 插入字符
+            self.insert_char(ch);
+            
+            // 恢复主光标位置
+            self.cursor_x = main_x;
+            self.cursor_y = main_y;
+        }
+    }
 }
+
+// 方法实现已完成
 
 #[derive(Debug)]
 pub enum Direction {
@@ -283,33 +426,76 @@ impl Editor {
                     self.status_message = "No filename specified".to_string();
                 }
             }
+            // 切换第二个光标显示/隐藏的快捷键
+            KeyEvent {
+                code: KeyCode::Char('c'),
+                modifiers: KeyModifiers::ALT,
+                ..
+            } => {
+                self.buffer.toggle_secondary_cursor();
+                self.status_message = if self.buffer.cursor_x2.is_some() { 
+                    "Secondary cursor enabled".to_string() 
+                } else { 
+                    "Secondary cursor disabled".to_string() 
+                };
+            }
+            // 使用Alt+方向键移动第二个光标
+            KeyEvent {
+                code: KeyCode::Up,
+                modifiers: KeyModifiers::ALT,
+                ..
+            } => {
+                self.buffer.move_cursor(Direction::Up, self.terminal_size, true);
+            }
+            KeyEvent {
+                code: KeyCode::Down,
+                modifiers: KeyModifiers::ALT,
+                ..
+            } => {
+                self.buffer.move_cursor(Direction::Down, self.terminal_size, true);
+            }
+            KeyEvent {
+                code: KeyCode::Left,
+                modifiers: KeyModifiers::ALT,
+                ..
+            } => {
+                self.buffer.move_cursor(Direction::Left, self.terminal_size, true);
+            }
+            KeyEvent {
+                code: KeyCode::Right,
+                modifiers: KeyModifiers::ALT,
+                ..
+            } => {
+                self.buffer.move_cursor(Direction::Right, self.terminal_size, true);
+            }
+            // 主光标移动
             KeyEvent {
                 code: KeyCode::Up,
                 modifiers: KeyModifiers::NONE,
                 ..
             } => {
-                self.buffer.move_cursor(Direction::Up, self.terminal_size);
+                self.buffer.move_cursor(Direction::Up, self.terminal_size, false);
             }
             KeyEvent {
                 code: KeyCode::Down,
                 modifiers: KeyModifiers::NONE,
                 ..
             } => {
-                self.buffer.move_cursor(Direction::Down, self.terminal_size);
+                self.buffer.move_cursor(Direction::Down, self.terminal_size, false);
             }
             KeyEvent {
                 code: KeyCode::Left,
                 modifiers: KeyModifiers::NONE,
                 ..
             } => {
-                self.buffer.move_cursor(Direction::Left, self.terminal_size);
+                self.buffer.move_cursor(Direction::Left, self.terminal_size, false);
             }
             KeyEvent {
                 code: KeyCode::Right,
                 modifiers: KeyModifiers::NONE,
                 ..
             } => {
-                self.buffer.move_cursor(Direction::Right, self.terminal_size);
+                self.buffer.move_cursor(Direction::Right, self.terminal_size, false);
             }
             KeyEvent {
                 code: KeyCode::Enter,
@@ -326,6 +512,15 @@ impl Editor {
                 // 直接调用delete_char，确保不会被重复调用
                 self.buffer.delete_char();
             }
+            // 使用Ctrl+字符在两个光标位置同时插入
+            KeyEvent {
+                code: KeyCode::Char(ch),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } if self.buffer.cursor_x2.is_some() && self.buffer.cursor_y2.is_some() => {
+                self.buffer.insert_char_at_both_cursors(ch);
+            }
+            // 普通字符输入
             KeyEvent {
                 code: KeyCode::Char(ch),
                 modifiers,
@@ -395,11 +590,29 @@ impl Editor {
         // Draw help bar
         self.draw_help_bar()?;
 
-        // Position cursor
+        // 先保存主光标位置
         let line_number_width = if self.show_line_numbers { 4 } else { 0 };
-        let screen_x = (self.buffer.cursor_x - self.buffer.offset_x + line_number_width) as u16;
-        let screen_y = (self.buffer.cursor_y - self.buffer.offset_y) as u16;
-        execute!(stdout(), cursor::MoveTo(screen_x, screen_y))?;
+        let main_screen_x = (self.buffer.cursor_x - self.buffer.offset_x + line_number_width) as u16;
+        let main_screen_y = (self.buffer.cursor_y - self.buffer.offset_y) as u16;
+        
+        // 如果有第二个光标，先显示它
+        if let (Some(x2), Some(y2)) = (self.buffer.cursor_x2, self.buffer.cursor_y2) {
+            let screen_x2 = (x2 - self.buffer.offset_x + line_number_width) as u16;
+            let screen_y2 = (y2 - self.buffer.offset_y) as u16;
+            
+            // 确保第二个光标在可视区域内
+            if screen_y2 < editor_height {
+                // 显示第二个光标（使用不同颜色区分）
+                execute!(stdout(), cursor::SavePosition)?;
+                execute!(stdout(), cursor::MoveTo(screen_x2, screen_y2))?;
+                execute!(stdout(), SetForegroundColor(Color::Green))?;
+                execute!(stdout(), cursor::Show)?;
+                execute!(stdout(), cursor::RestorePosition)?;
+            }
+        }
+        
+        // 最后定位主光标
+        execute!(stdout(), cursor::MoveTo(main_screen_x, main_screen_y))?;
         
         stdout().flush()?;
         Ok(())
@@ -417,7 +630,8 @@ impl Editor {
             .unwrap_or("[No Name]");
         
         let modified_indicator = if self.buffer.modified { " [Modified]" } else { "" };
-        let status = format!(" {} - {} lines{}", filename, self.buffer.lines.len(), modified_indicator);
+        let secondary_cursor_indicator = if self.buffer.cursor_x2.is_some() { " [Multi-cursor]" } else { "" };
+        let status = format!(" {} - {} lines{}{}", filename, self.buffer.lines.len(), modified_indicator, secondary_cursor_indicator);
         let status_len = status.len();
         
         execute!(
@@ -455,7 +669,7 @@ impl Editor {
         execute!(stdout(), cursor::MoveTo(0, height - 1))?;
         execute!(stdout(), terminal::Clear(ClearType::CurrentLine))?;
         
-        let help = "^X Exit  ^O Save  ^W Search  ^K Cut  ^U Paste";
+        let help = "^X Exit  ^O Save  ^C Toggle cursor  Alt+Arrows Move 2nd cursor";
         execute!(
             stdout(),
             SetForegroundColor(Color::Black),
