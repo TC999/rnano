@@ -63,19 +63,20 @@ impl TextBuffer {
         &mut self.lines[self.cursor_y]
     }
 
-    /// 在当前光标位置插入字符（按字符索引插入，支持中文）
+        /// 在当前光标位置插入字符（按字符索引插入，支持中文）
     pub fn insert_char(&mut self, ch: char) {
+        let cursor_x = self.cursor_x; // 保存光标位置，避免借用冲突
         let line = self.current_line_mut();
         let mut byte_pos = 0;
         let mut char_count = 0;
-        for (i, (pos, _)) in line.char_indices().enumerate() {
-            if char_count == self.cursor_x {
+        for (pos, _) in line.char_indices() {
+            if char_count == cursor_x {
                 byte_pos = pos;
                 break;
             }
             char_count += 1;
         }
-        if self.cursor_x >= line.chars().count() {
+        if cursor_x >= line.chars().count() {
             byte_pos = line.len();
         }
         line.insert(byte_pos, ch);
@@ -85,17 +86,18 @@ impl TextBuffer {
 
     /// 插入新行，光标移到下一行行首
     pub fn insert_newline(&mut self) {
+        let cursor_x = self.cursor_x; // 保存光标位置
         let line = self.current_line().clone();
         let mut byte_pos = 0;
         let mut char_count = 0;
-        for (i, (pos, _)) in line.char_indices().enumerate() {
-            if char_count == self.cursor_x {
+        for (pos, _) in line.char_indices() {
+            if char_count == cursor_x {
                 byte_pos = pos;
                 break;
             }
             char_count += 1;
         }
-        if self.cursor_x >= line.chars().count() {
+        if cursor_x >= line.chars().count() {
             byte_pos = line.len();
         }
         let (left, right) = line.split_at(byte_pos);
@@ -108,17 +110,17 @@ impl TextBuffer {
 
     /// 删除光标前字符（支持中文，按字符索引删除）
     pub fn delete_char(&mut self) {
-        if self.cursor_x > 0 {
+        let cursor_x = self.cursor_x; // 保存光标位置
+        if cursor_x > 0 {
             let line = self.current_line_mut();
-            let mut byte_pos = 0;
-            let mut char_indices: Vec<usize> = line.char_indices().map(|(i, _)| i).collect();
-            if self.cursor_x < char_indices.len() {
-                byte_pos = char_indices[self.cursor_x];
+            let char_indices: Vec<usize> = line.char_indices().map(|(i, _)| i).collect();
+            let byte_pos = if cursor_x < char_indices.len() {
+                char_indices[cursor_x]
             } else {
-                byte_pos = line.len();
-            }
-            let prev_pos = if self.cursor_x > 0 {
-                char_indices[self.cursor_x - 1]
+                line.len()
+            };
+            let prev_pos = if cursor_x > 0 {
+                char_indices[cursor_x - 1]
             } else {
                 0
             };

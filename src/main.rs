@@ -1,4 +1,4 @@
-// RSNano编辑器主入口点
+// RSNano 编辑器主入口点
 
 use rsnano::args::Args;
 use rsnano::editor::Editor;
