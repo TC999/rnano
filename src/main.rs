@@ -239,10 +239,8 @@ impl Editor {
                 if let Event::Key(key_event) = event::read()? {
                     // 确保每个按键事件只被处理一次
                     self.process_key(key_event)?;
-                    // 清除状态消息
-                    if !self.status_message.is_empty() {
-                        self.status_message.clear();
-                    }
+                    // 不要在这里清除状态消息，因为需要保留确认提示
+                    // 状态消息会在refresh_screen中显示，然后自动更新
                 }
             }
 
