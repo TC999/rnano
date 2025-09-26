@@ -1,5 +1,5 @@
 use crossterm::{cursor, event, style, terminal, execute};
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, KeyEventKind};
 use crossterm::style::{Color, ResetColor, SetForegroundColor};
 use crossterm::terminal::{ClearType, EnterAlternateScreen, LeaveAlternateScreen};
 use std::io::{stdout, Write};
@@ -16,8 +16,6 @@ pub struct Editor {
     show_line_numbers: bool,
     should_quit: bool,
     status_message: String,
-    last_key: Option<(KeyEvent, std::time::Instant)>, // 添加去抖动功能
-    debounce_interval: std::time::Duration,           // 去抖动间隔
 }
 
 impl Editor {
@@ -37,8 +35,6 @@ impl Editor {
             show_line_numbers: args.line_numbers,
             should_quit: false,
             status_message: String::new(),
-            last_key: None,
-            debounce_interval: std::time::Duration::from_millis(50), // 50ms去抖动间隔
         })
     }
 
@@ -67,8 +63,8 @@ impl Editor {
             // 使用事件轮询而非阻塞读取
             if event::poll(std::time::Duration::from_millis(50))? {
                 if let Event::Key(key_event) = event::read()? {
-                    // 应用去抖动，避免Windows上的重复按键处理
-                    if self.should_process_key(&key_event) {
+                    // 只处理 KeyEventKind::Press，彻底解决重复插入/删除问题
+                    if key_event.kind == KeyEventKind::Press {
                         self.process_key(key_event)?;
                     }
                 }
@@ -82,28 +78,9 @@ impl Editor {
         }
         Ok(())
     }
-    
-    /// 检查是否应该处理按键事件（去抖动）
-    fn should_process_key(&mut self, key_event: &KeyEvent) -> bool {
-        let now = std::time::Instant::now();
-        
-        // 如果这是第一次按键或已经过了去抖动间隔，则处理
-        if let Some((last_key, last_time)) = self.last_key {
-            if *key_event == last_key && now.duration_since(last_time) < self.debounce_interval {
-                return false; // 忽略短时间内的重复按键
-            }
-        }
-        
-        // 记录当前按键和时间
-        self.last_key = Some((*key_event, now));
-        true
-    }
 
     /// 处理按键事件
     fn process_key(&mut self, key_event: KeyEvent) -> Result<()> {
-        // 记录按键处理，用于调试
-        // println!("Processing key: {:?}", key_event);
-        
         match key_event {
             KeyEvent {
                 code: KeyCode::Char('x'),
@@ -111,7 +88,6 @@ impl Editor {
                 ..
             } => {
                 if self.buffer.modified && self.status_message.contains("File modified") {
-                    // Second Ctrl+X - exit without saving
                     self.should_quit = true;
                 } else if self.buffer.modified {
                     self.status_message = "File modified. Press Ctrl+X again to exit without saving, or Ctrl+O to save".to_string();
@@ -213,7 +189,6 @@ impl Editor {
                 modifiers: KeyModifiers::NONE,
                 ..
             } => {
-                // 直接调用delete_char，确保不会被重复调用
                 self.buffer.delete_char();
             }
             // 使用Ctrl+字符在两个光标位置同时插入
@@ -230,7 +205,6 @@ impl Editor {
                 modifiers,
                 ..
             } if modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::SHIFT => {
-                // 直接调用insert_char，确保不会被重复调用
                 self.buffer.insert_char(ch);
             }
             _ => {}
