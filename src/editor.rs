@@ -214,9 +214,15 @@ impl Editor {
 
     /// 屏幕刷新，主光标高亮，支持中文
     fn refresh_screen(&mut self) -> Result<()> {
+        use std::io::stdout;
+        use crossterm::{cursor, style, terminal, execute};
+        use crossterm::style::{Color, ResetColor, SetForegroundColor, SetBackgroundColor};
+        use crossterm::terminal::ClearType;
+    
         execute!(stdout(), cursor::MoveTo(0, 0))?;
         let (width, height) = self.terminal_size;
         let editor_height = height - 2;
+    
         for screen_row in 0..editor_height {
             let file_row = screen_row as usize + self.buffer.offset_y;
             execute!(stdout(), terminal::Clear(ClearType::CurrentLine))?;
@@ -234,7 +240,6 @@ impl Editor {
                 let display_width = width as usize - line_number_width;
                 let start = self.buffer.offset_x.min(line.chars().count());
                 let end = (start + display_width).min(line.chars().count());
-                // 逐字符输出，主光标高亮
                 for (i, ch) in line.chars().enumerate().skip(start).take(end - start) {
                     if i == self.buffer.cursor_x && file_row == self.buffer.cursor_y {
                         execute!(
@@ -245,10 +250,12 @@ impl Editor {
                             ResetColor
                         )?;
                     } else {
-                        print!("{}", ch);
+                        execute!(
+                            stdout(),
+                            style::Print(ch)
+                        )?;
                     }
                 }
-                // 行尾光标
                 if self.buffer.cursor_y == file_row 
                     && self.buffer.cursor_x == line.chars().count()
                     && end == line.chars().count() {
@@ -275,7 +282,11 @@ impl Editor {
             }
             execute!(stdout(), cursor::MoveToNextLine(1))?;
         }
-        // 状态栏/帮助栏等略
+    
+        // 菜单栏和帮助栏
+        self.draw_status_bar()?;
+        self.draw_help_bar()?;
+    
         // 主光标定位
         let line_number_width = if self.show_line_numbers { 4 } else { 0 };
         let main_screen_x = (self.buffer.cursor_x - self.buffer.offset_x + line_number_width) as u16;
