@@ -1,6 +1,6 @@
 use crossterm::{cursor, event, style, terminal, execute};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, KeyEventKind};
-use crossterm::style::{Color, ResetColor, SetForegroundColor, SetBackgroundColor};
+use crossterm::style::{Color, ResetColor, SetForegroundColor};
 use crossterm::terminal::{ClearType, EnterAlternateScreen, LeaveAlternateScreen};
 use std::io::{stdout, Write};
 
