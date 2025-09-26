@@ -241,9 +241,11 @@ impl Editor {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                if self.buffer.modified {
+                if self.buffer.modified && self.status_message.contains("File modified") {
+                    // Second Ctrl+X - exit without saving
+                    self.should_quit = true;
+                } else if self.buffer.modified {
                     self.status_message = "File modified. Press Ctrl+X again to exit without saving, or Ctrl+O to save".to_string();
-                    // In a real implementation, you'd want to handle this more gracefully
                 } else {
                     self.should_quit = true;
                 }
@@ -303,9 +305,9 @@ impl Editor {
             }
             KeyEvent {
                 code: KeyCode::Char(ch),
-                modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
+                modifiers,
                 ..
-            } => {
+            } if modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::SHIFT => {
                 self.buffer.insert_char(ch);
             }
             _ => {}
