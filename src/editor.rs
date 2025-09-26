@@ -1,6 +1,6 @@
 use crossterm::{cursor, event, style, terminal, execute};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, KeyEventKind};
-use crossterm::style::{Color, ResetColor, SetForegroundColor};
+use crossterm::style::{Color, ResetColor, SetForegroundColor, SetBackgroundColor};
 use crossterm::terminal::{ClearType, EnterAlternateScreen, LeaveAlternateScreen};
 use std::io::{stdout, Write};
 
@@ -219,7 +219,7 @@ impl Editor {
         let (width, height) = self.terminal_size;
         let editor_height = height - 2; // Reserve space for status and help
 
-        // Draw editor content
+        // 绘制编辑器内容，逐字符处理，光标高亮
         for screen_row in 0..editor_height {
             let file_row = screen_row as usize + self.buffer.offset_y;
             
@@ -241,9 +241,35 @@ impl Editor {
                 let display_width = width as usize - line_number_width;
                 let start = self.buffer.offset_x.min(line.len());
                 let end = (start + display_width).min(line.len());
-                
-                if start < line.len() {
-                    print!("{}", &line[start..end]);
+
+                // 逐字符输出，主光标高亮
+                for (col, ch) in line.chars().enumerate().skip(start).take(end - start) {
+                    let buffer_x = col;
+                    let buffer_y = file_row;
+                    if buffer_x == self.buffer.cursor_x && buffer_y == self.buffer.cursor_y {
+                        // 主光标位置高亮显示
+                        execute!(
+                            stdout(),
+                            SetBackgroundColor(Color::Yellow),
+                            SetForegroundColor(Color::Black),
+                            style::Print(ch),
+                            ResetColor
+                        )?;
+                    } else {
+                        print!("{}", ch);
+                    }
+                }
+                // 如果光标在行尾，显示一个插入符号
+                if self.buffer.cursor_y == file_row 
+                    && self.buffer.cursor_x == line.len()
+                    && end == line.len() {
+                    execute!(
+                        stdout(),
+                        SetBackgroundColor(Color::Yellow),
+                        SetForegroundColor(Color::Black),
+                        style::Print("▏"),
+                        ResetColor
+                    )?;
                 }
             } else if file_row == self.buffer.lines.len() && screen_row == 0 {
                 // Show welcome message for empty buffer
