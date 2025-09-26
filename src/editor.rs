@@ -16,6 +16,8 @@ pub struct Editor {
     show_line_numbers: bool,
     should_quit: bool,
     status_message: String,
+    last_key: Option<(KeyEvent, std::time::Instant)>, // 添加去抖动功能
+    debounce_interval: std::time::Duration,           // 去抖动间隔
 }
 
 impl Editor {
@@ -35,6 +37,8 @@ impl Editor {
             show_line_numbers: args.line_numbers,
             should_quit: false,
             status_message: String::new(),
+            last_key: None,
+            debounce_interval: std::time::Duration::from_millis(50), // 50ms去抖动间隔
         })
     }
 
@@ -61,13 +65,12 @@ impl Editor {
             }
 
             // 使用事件轮询而非阻塞读取
-            // 这样可以更好地控制事件处理的频率
             if event::poll(std::time::Duration::from_millis(50))? {
                 if let Event::Key(key_event) = event::read()? {
-                    // 确保每个按键事件只被处理一次
-                    self.process_key(key_event)?;
-                    // 不要在这里清除状态消息，因为需要保留确认提示
-                    // 状态消息会在refresh_screen中显示，然后自动更新
+                    // 应用去抖动，避免Windows上的重复按键处理
+                    if self.should_process_key(&key_event) {
+                        self.process_key(key_event)?;
+                    }
                 }
             }
 
@@ -78,6 +81,22 @@ impl Editor {
             }
         }
         Ok(())
+    }
+    
+    /// 检查是否应该处理按键事件（去抖动）
+    fn should_process_key(&mut self, key_event: &KeyEvent) -> bool {
+        let now = std::time::Instant::now();
+        
+        // 如果这是第一次按键或已经过了去抖动间隔，则处理
+        if let Some((last_key, last_time)) = self.last_key {
+            if *key_event == last_key && now.duration_since(last_time) < self.debounce_interval {
+                return false; // 忽略短时间内的重复按键
+            }
+        }
+        
+        // 记录当前按键和时间
+        self.last_key = Some((*key_event, now));
+        true
     }
 
     /// 处理按键事件
