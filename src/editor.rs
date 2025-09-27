@@ -16,6 +16,8 @@ pub struct Editor {
     show_line_numbers: bool,
     should_quit: bool,
     status_message: String,
+    file_save_prompt: Option<String>, // None: 非输入模式，Some: 当前正在输入的文件名
+    file_save_input: String,          // 输入框内容
 }
 
 impl Editor {
@@ -35,6 +37,8 @@ impl Editor {
             show_line_numbers: args.line_numbers,
             should_quit: false,
             status_message: String::new(),
+            file_save_prompt: None,
+            file_save_input: String::new(),
         })
     }
 
@@ -81,6 +85,41 @@ impl Editor {
 
     /// 处理按键事件
     fn process_key(&mut self, key_event: KeyEvent) -> Result<()> {
+        if self.file_save_prompt.is_some() {
+            match key_event.code {
+                KeyCode::Enter => {
+                    // 确认输入并保存
+                    let filename = self.file_save_input.trim();
+                    if !filename.is_empty() {
+                        self.buffer.filename = Some(std::path::PathBuf::from(filename));
+                        if self.buffer.save()? {
+                            self.status_message = "File saved".to_string();
+                        } else {
+                            self.status_message = "Save failed".to_string();
+                        }
+                    } else {
+                        self.status_message = "Filename cannot be empty".to_string();
+                    }
+                    self.file_save_prompt = None;
+                    self.file_save_input.clear();
+                }
+                KeyCode::Esc => {
+                    // 取消
+                    self.file_save_prompt = None;
+                    self.file_save_input.clear();
+                    self.status_message = "Save cancelled".to_string();
+                }
+                KeyCode::Backspace => {
+                    self.file_save_input.pop();
+                }
+                KeyCode::Char(ch) => {
+                    self.file_save_input.push(ch);
+                }
+                _ => {}
+            }
+            return Ok(()); // 在输入模式下，不处理其他按键
+        }
+
         match key_event {
             KeyEvent {
                 code: KeyCode::Char('x'),
@@ -100,10 +139,16 @@ impl Editor {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                if self.buffer.save()? {
-                    self.status_message = "File saved".to_string();
+                if self.buffer.filename.is_some() {
+                    if self.buffer.save()? {
+                        self.status_message = "File saved".to_string();
+                    } else {
+                        self.status_message = "Save failed".to_string();
+                    }
                 } else {
-                    self.status_message = "No filename specified".to_string();
+                    // 进入文件名输入模式
+                    self.file_save_prompt = Some("Enter filename to save:".to_string());
+                    self.file_save_input.clear();
                 }
             }
             // 切换第二个光标显示/隐藏的快捷键
@@ -281,6 +326,23 @@ impl Editor {
                 }
             }
             execute!(stdout(), cursor::MoveToNextLine(1))?;
+        }
+
+        if let Some(prompt) = &self.file_save_prompt {
+            use crossterm::style::{Color, SetForegroundColor, SetBackgroundColor};
+            let (width, height) = self.terminal_size;
+            let popup_y = height / 2;
+            let popup_x = (width as usize / 2).saturating_sub(20) as u16;
+            let max_len = 40;
+            let input = &self.file_save_input;
+            execute!(
+                stdout(),
+                cursor::MoveTo(popup_x, popup_y),
+                SetBackgroundColor(Color::White),
+                SetForegroundColor(Color::Black),
+                style::Print(format!("{} {}", prompt, input)),
+                ResetColor
+            )?;
         }
     
         // 菜单栏和帮助栏
