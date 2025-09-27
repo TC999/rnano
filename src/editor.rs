@@ -333,7 +333,7 @@ impl Editor {
             let (width, height) = self.terminal_size;
             let popup_y = height / 2;
             let popup_x = (width as usize / 2).saturating_sub(20) as u16;
-            let max_len = 40;
+            let _max_len = 40;
             let input = &self.file_save_input;
             execute!(
                 stdout(),
