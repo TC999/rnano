@@ -1,0 +1,17 @@
+name: 编译
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 编译
+        run: cargo build --release
+      - name: 上传编译产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: 编译产物
+          path: target/release/rsnano.exe
