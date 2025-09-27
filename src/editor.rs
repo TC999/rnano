@@ -1,8 +1,8 @@
 use crossterm::{cursor, event, style, terminal, execute};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, KeyEventKind};
-use crossterm::style::{Color, ResetColor, SetForegroundColor, SetBackgroundColor};
+use crossterm::style::{Color, ResetColor, SetForegroundColor};
 use crossterm::terminal::{ClearType, EnterAlternateScreen, LeaveAlternateScreen};
-use std::io::{stdout, Write};
+use std::io::{stdout};
 
 use crate::buffer::TextBuffer;
 use crate::direction::Direction;
