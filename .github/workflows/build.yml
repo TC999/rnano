@@ -17,7 +17,7 @@ jobs:
       - name: 上传编译产物
         uses: actions/upload-artifact@v4
         with:
-          name: 编译产物
+          name: windows-build
           path: target/release/rsnano.exe
 
   build-ubuntu:
