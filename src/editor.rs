@@ -1,6 +1,6 @@
 use crossterm::{cursor, event, style, terminal, execute};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, KeyEventKind};
-use crossterm::style::{Color, ResetColor, SetForegroundColor};
+use crossterm::style::{Color, ResetColor, SetForegroundColor, SetBackgroundColor};
 use crossterm::terminal::{ClearType, EnterAlternateScreen, LeaveAlternateScreen};
 use std::io::{stdout, Write};
 
@@ -16,8 +16,8 @@ pub struct Editor {
     show_line_numbers: bool,
     should_quit: bool,
     status_message: String,
-    file_save_prompt: Option<String>, // 新增：保存文件名弹窗
-    file_save_input: String,          // 新增：输入框内容
+    file_save_prompt: Option<String>, // 是否处于保存文件名输入模式
+    file_save_input: String,          // 保存文件名输入内容
 }
 
 impl Editor {
@@ -64,17 +64,16 @@ impl Editor {
                 break;
             }
 
-            // 使用事件轮询而非阻塞读取
+            // 事件轮询
             if event::poll(std::time::Duration::from_millis(50))? {
                 if let Event::Key(key_event) = event::read()? {
-                    // 只处理 KeyEventKind::Press，彻底解决重复插入/删除问题
                     if key_event.kind == KeyEventKind::Press {
                         self.process_key(key_event)?;
                     }
                 }
             }
 
-            // Update terminal size if changed
+            // 检查终端尺寸变化
             let new_size = terminal::size()?;
             if new_size != self.terminal_size {
                 self.terminal_size = new_size;
@@ -85,11 +84,10 @@ impl Editor {
 
     /// 处理按键事件
     fn process_key(&mut self, key_event: KeyEvent) -> Result<()> {
-        // 保存文件名输入弹窗模式
+        // 文件名输入模式
         if self.file_save_prompt.is_some() {
             match key_event.code {
                 KeyCode::Enter => {
-                    // 确认输入并保存
                     let filename = self.file_save_input.trim();
                     if !filename.is_empty() {
                         self.buffer.filename = Some(std::path::PathBuf::from(filename));
@@ -105,7 +103,6 @@ impl Editor {
                     self.file_save_input.clear();
                 }
                 KeyCode::Esc => {
-                    // 取消保存
                     self.file_save_prompt = None;
                     self.file_save_input.clear();
                     self.status_message = "已取消保存".to_string();
@@ -118,7 +115,7 @@ impl Editor {
                 }
                 _ => {}
             }
-            return Ok(()); // 输入模式下不处理其他按键
+            return Ok(());
         }
 
         match key_event {
@@ -140,7 +137,7 @@ impl Editor {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                // 总是弹出文件名输入弹窗，初始内容为当前文件名或空
+                // 总是弹出文件名输入框，初始内容为当前文件名或空
                 let init_filename = self.buffer.filename
                     .as_ref()
                     .and_then(|p| p.to_str())
@@ -148,7 +145,7 @@ impl Editor {
                 self.file_save_prompt = Some("请输入要保存的文件名:".to_string());
                 self.file_save_input = init_filename.to_string();
             }
-            // 切换第二个光标显示/隐藏的快捷键
+            // 切换第二个光标显示/隐藏
             KeyEvent {
                 code: KeyCode::Char('c'),
                 modifiers: KeyModifiers::ALT,
@@ -233,7 +230,7 @@ impl Editor {
             } => {
                 self.buffer.delete_char();
             }
-            // 使用Ctrl+字符在两个光标位置同时插入
+            // Ctrl+字符在两个光标位置同时插入
             KeyEvent {
                 code: KeyCode::Char(ch),
                 modifiers: KeyModifiers::CONTROL,
@@ -325,105 +322,100 @@ impl Editor {
             execute!(stdout(), cursor::MoveToNextLine(1))?;
         }
     
-        // 菜单栏和帮助栏
+        // 状态栏和帮助栏（或文件名输入栏）
         self.draw_status_bar()?;
-        self.draw_help_bar()?;
-
-        // 如果弹窗模式，绘制弹窗
-        if let Some(prompt) = &self.file_save_prompt {
-            let (width, height) = self.terminal_size;
-            let popup_y = height / 2;
-            let popup_x = (width as usize / 2).saturating_sub(20) as u16;
-            let input = &self.file_save_input;
-            let popup = format!("{} {}", prompt, input);
-            // 清理弹窗区，避免残留
-            execute!(
-                stdout(),
-                cursor::MoveTo(popup_x, popup_y),
-                terminal::Clear(ClearType::CurrentLine),
-                SetBackgroundColor(Color::White),
-                SetForegroundColor(Color::Black),
-                style::Print(&popup),
-                ResetColor
-            )?;
-        }
-    
-        // 主光标定位
-        let line_number_width = if self.show_line_numbers { 4 } else { 0 };
-        let main_screen_x = (self.buffer.cursor_x - self.buffer.offset_x + line_number_width) as u16;
-        let main_screen_y = (self.buffer.cursor_y - self.buffer.offset_y) as u16;
-        execute!(stdout(), cursor::MoveTo(main_screen_x, main_screen_y))?;
-        stdout().flush()?;
         Ok(())
     }
 
-    /// 绘制状态栏
+    /// 绘制状态栏、文件名输入栏、帮助栏
     fn draw_status_bar(&self) -> Result<()> {
         let (width, height) = self.terminal_size;
+        // 第一行（倒数第二行）
         execute!(stdout(), cursor::MoveTo(0, height - 2))?;
         execute!(stdout(), terminal::Clear(ClearType::CurrentLine))?;
-        
-        let filename = self.buffer.filename
-            .as_ref()
-            .and_then(|p| p.file_name())
-            .and_then(|n| n.to_str())
-            .unwrap_or("[无文件名]");
-        
-        let modified_indicator = if self.buffer.modified { " [已修改]" } else { "" };
-        let secondary_cursor_indicator = if self.buffer.cursor_x2.is_some() { " [多光标]" } else { "" };
-        let status = format!(" {} - {} 行{}{}", filename, self.buffer.lines.len(), modified_indicator, secondary_cursor_indicator);
-        let status_len = status.len();
-        
-        execute!(
-            stdout(),
-            SetForegroundColor(Color::Black),
-            style::SetBackgroundColor(Color::White),
-            style::Print(status),
-        )?;
-        
-        // 补齐状态栏
-        let remaining = width as usize - status_len;
-        if remaining > 0 {
-            execute!(stdout(), style::Print(" ".repeat(remaining)))?;
-        }
-        
-        execute!(stdout(), ResetColor)?;
-        
-        // 显示状态消息
-        if !self.status_message.is_empty() {
-            execute!(stdout(), cursor::MoveToNextLine(1))?;
-            execute!(stdout(), terminal::Clear(ClearType::CurrentLine))?;
+
+        if let Some(prompt) = &self.file_save_prompt {
+            // 文件名输入模式：在状态栏显示输入提示和内容
+            let input = &self.file_save_input;
+            let msg = format!("{} {}", prompt, input);
+            let msg_len = msg.len();
             execute!(
                 stdout(),
-                SetForegroundColor(Color::Red),
-                style::Print(&self.status_message),
-                ResetColor
+                SetForegroundColor(Color::Black),
+                style::SetBackgroundColor(Color::White),
+                style::Print(&msg),
             )?;
-        }
-        
-        Ok(())
-    }
+            let remaining = width as usize - msg_len;
+            if remaining > 0 {
+                execute!(stdout(), style::Print(" ".repeat(remaining)))?;
+            }
+            execute!(stdout(), ResetColor)?;
+            // 第二行显示：回车确认，ESC取消
+            execute!(stdout(), cursor::MoveTo(0, height - 1))?;
+            execute!(stdout(), terminal::Clear(ClearType::CurrentLine))?;
+            let help = "回车确认，ESC取消";
+            execute!(
+                stdout(),
+                SetForegroundColor(Color::Black),
+                style::SetBackgroundColor(Color::White),
+                style::Print(help),
+            )?;
+            let remaining = width as usize - help.len();
+            if remaining > 0 {
+                execute!(stdout(), style::Print(" ".repeat(remaining)))?;
+            }
+            execute!(stdout(), ResetColor)?;
+        } else {
+            // 普通状态栏
+            let filename = self.buffer.filename
+                .as_ref()
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str())
+                .unwrap_or("[无文件名]");
+            let modified_indicator = if self.buffer.modified { " [已修改]" } else { "" };
+            let secondary_cursor_indicator = if self.buffer.cursor_x2.is_some() { " [多光标]" } else { "" };
+            let status = format!(" {} - {} 行{}{}", filename, self.buffer.lines.len(), modified_indicator, secondary_cursor_indicator);
+            let status_len = status.len();
+            execute!(
+                stdout(),
+                SetForegroundColor(Color::Black),
+                style::SetBackgroundColor(Color::White),
+                style::Print(status),
+            )?;
+            let remaining = width as usize - status_len;
+            if remaining > 0 {
+                execute!(stdout(), style::Print(" ".repeat(remaining)))?;
+            }
+            execute!(stdout(), ResetColor)?;
 
-    /// 绘制帮助栏
-    fn draw_help_bar(&self) -> Result<()> {
-        let (width, height) = self.terminal_size;
-        execute!(stdout(), cursor::MoveTo(0, height - 1))?;
-        execute!(stdout(), terminal::Clear(ClearType::CurrentLine))?;
-        
-        let help = "^X 退出  ^O 保存  ^C 多光标  Alt+方向键 移动多光标";
-        execute!(
-            stdout(),
-            SetForegroundColor(Color::Black),
-            style::SetBackgroundColor(Color::White),
-            style::Print(help),
-        )?;
-        
-        let remaining = width as usize - help.len();
-        if remaining > 0 {
-            execute!(stdout(), style::Print(" ".repeat(remaining)))?;
+            // 状态消息
+            if !self.status_message.is_empty() {
+                execute!(stdout(), cursor::MoveToNextLine(1))?;
+                execute!(stdout(), terminal::Clear(ClearType::CurrentLine))?;
+                execute!(
+                    stdout(),
+                    SetForegroundColor(Color::Red),
+                    style::Print(&self.status_message),
+                    ResetColor
+                )?;
+            } else {
+                // 帮助栏
+                execute!(stdout(), cursor::MoveTo(0, height - 1))?;
+                execute!(stdout(), terminal::Clear(ClearType::CurrentLine))?;
+                let help = "^X 退出  ^O 保存  ^C 多光标  Alt+方向键 移动多光标";
+                execute!(
+                    stdout(),
+                    SetForegroundColor(Color::Black),
+                    style::SetBackgroundColor(Color::White),
+                    style::Print(help),
+                )?;
+                let remaining = width as usize - help.len();
+                if remaining > 0 {
+                    execute!(stdout(), style::Print(" ".repeat(remaining)))?;
+                }
+                execute!(stdout(), ResetColor)?;
+            }
         }
-        
-        execute!(stdout(), ResetColor)?;
         Ok(())
     }
 }
