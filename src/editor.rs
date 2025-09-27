@@ -113,13 +113,8 @@ impl Editor {
                     let filename = self.file_save_input.trim();
                     if !filename.is_empty() {
                         self.buffer.filename = Some(std::path::PathBuf::from(filename));
-                        if self.buffer.save()? {
-                            // 保存成功后，统计已修改行数
-                            let modified_lines = self.buffer.lines.len();
-                            self.status_message = format!("已保存，已修改 {} 行", modified_lines);
-                        } else {
-                            self.status_message = "保存失败".to_string();
-                        }
+                        let modified_count = self.buffer.save()?; // 获取实际修改行数
+                        self.status_message = format!("已保存，已修改 {} 行", modified_count);
                     } else {
                         self.status_message = "文件名不能为空".to_string();
                     }
@@ -383,8 +378,8 @@ impl Editor {
                 .and_then(|p| p.file_name())
                 .and_then(|n| n.to_str())
                 .unwrap_or("[无文件名]");
-            let modified_indicator = if self.buffer.modified {
-                format!(" [已修改 {} 行]", self.buffer.lines.len())
+            let modified_indicator = if self.buffer.modified && !self.buffer.modified_lines_set.is_empty() {
+                format!(" [已修改 {} 行]", self.buffer.modified_lines_set.len())
             } else {
                 "".to_string()
             };

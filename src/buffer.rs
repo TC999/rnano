@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
+use std::collections::HashSet;
 
 use crate::direction::Direction;
 use crate::Result;
@@ -17,6 +18,7 @@ pub struct TextBuffer {
     pub offset_y: usize,
     pub modified: bool,
     pub filename: Option<PathBuf>,
+    pub modified_lines_set: HashSet<usize>, // 新增：记录被修改过的行号
 }
 
 impl TextBuffer {
@@ -31,6 +33,7 @@ impl TextBuffer {
             offset_y: 0,
             modified: false,
             filename: None,
+            modified_lines_set: HashSet::new(),
         }
     }
 
@@ -52,6 +55,7 @@ impl TextBuffer {
             offset_y: 0,
             modified: false,
             filename: Some(path.clone()),
+            modified_lines_set: HashSet::new(),
         })
     }
 
@@ -63,7 +67,7 @@ impl TextBuffer {
         &mut self.lines[self.cursor_y]
     }
 
-        /// 在当前光标位置插入字符（按字符索引插入，支持中文）
+    /// 在当前光标位置插入字符（按字符索引插入，支持中文）
     pub fn insert_char(&mut self, ch: char) {
         let cursor_x = self.cursor_x; // 保存光标位置，避免借用冲突
         let line = self.current_line_mut();
@@ -82,6 +86,7 @@ impl TextBuffer {
         line.insert(byte_pos, ch);
         self.cursor_x += 1;
         self.modified = true;
+        self.modified_lines_set.insert(self.cursor_y);
     }
 
     /// 插入新行，光标移到下一行行首
@@ -106,6 +111,8 @@ impl TextBuffer {
         self.cursor_y += 1;
         self.cursor_x = 0;
         self.modified = true;
+        self.modified_lines_set.insert(self.cursor_y - 1);
+        self.modified_lines_set.insert(self.cursor_y);
     }
 
     /// 删除光标前字符（支持中文，按字符索引删除）
@@ -127,6 +134,7 @@ impl TextBuffer {
             line.drain(prev_pos..byte_pos);
             self.cursor_x -= 1;
             self.modified = true;
+            self.modified_lines_set.insert(self.cursor_y);
         } else if self.cursor_y > 0 {
             // 与上一行合并
             let current_line = self.lines.remove(self.cursor_y);
@@ -134,6 +142,7 @@ impl TextBuffer {
             self.cursor_x = self.lines[self.cursor_y].chars().count();
             self.lines[self.cursor_y].push_str(&current_line);
             self.modified = true;
+            self.modified_lines_set.insert(self.cursor_y);
         }
     }
 
@@ -235,15 +244,17 @@ impl TextBuffer {
         }
     }
 
-    /// 保存缓冲区内容到文件
-    pub fn save(&mut self) -> Result<bool> {
+    /// 保存缓冲区内容到文件，返回被修改过的行数
+    pub fn save(&mut self) -> Result<usize> {
         if let Some(filename) = &self.filename {
             let contents = self.lines.join("\n");
             fs::write(filename, contents)?;
             self.modified = false;
-            Ok(true)
+            let count = self.modified_lines_set.len();
+            self.modified_lines_set.clear();
+            Ok(count)
         } else {
-            Ok(false)
+            Ok(0)
         }
     }
     
