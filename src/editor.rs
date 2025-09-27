@@ -1,6 +1,6 @@
 use crossterm::{cursor, event, style, terminal, execute};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, KeyEventKind};
-use crossterm::style::{Color, ResetColor, SetForegroundColor};
+use crossterm::style::{Color, ResetColor, SetForegroundColor, SetBackgroundColor};
 use crossterm::terminal::{ClearType, EnterAlternateScreen, LeaveAlternateScreen};
 use std::io::{stdout, Write};
 
@@ -16,8 +16,8 @@ pub struct Editor {
     show_line_numbers: bool,
     should_quit: bool,
     status_message: String,
-    file_save_prompt: Option<String>, // None: 非输入模式，Some: 当前正在输入的文件名
-    file_save_input: String,          // 输入框内容
+    file_save_prompt: Option<String>, // 新增：保存文件名弹窗
+    file_save_input: String,          // 新增：输入框内容
 }
 
 impl Editor {
@@ -85,6 +85,7 @@ impl Editor {
 
     /// 处理按键事件
     fn process_key(&mut self, key_event: KeyEvent) -> Result<()> {
+        // 保存文件名输入弹窗模式
         if self.file_save_prompt.is_some() {
             match key_event.code {
                 KeyCode::Enter => {
@@ -93,21 +94,21 @@ impl Editor {
                     if !filename.is_empty() {
                         self.buffer.filename = Some(std::path::PathBuf::from(filename));
                         if self.buffer.save()? {
-                            self.status_message = "File saved".to_string();
+                            self.status_message = "文件已保存".to_string();
                         } else {
-                            self.status_message = "Save failed".to_string();
+                            self.status_message = "保存失败".to_string();
                         }
                     } else {
-                        self.status_message = "Filename cannot be empty".to_string();
+                        self.status_message = "文件名不能为空".to_string();
                     }
                     self.file_save_prompt = None;
                     self.file_save_input.clear();
                 }
                 KeyCode::Esc => {
-                    // 取消
+                    // 取消保存
                     self.file_save_prompt = None;
                     self.file_save_input.clear();
-                    self.status_message = "Save cancelled".to_string();
+                    self.status_message = "已取消保存".to_string();
                 }
                 KeyCode::Backspace => {
                     self.file_save_input.pop();
@@ -117,7 +118,7 @@ impl Editor {
                 }
                 _ => {}
             }
-            return Ok(()); // 在输入模式下，不处理其他按键
+            return Ok(()); // 输入模式下不处理其他按键
         }
 
         match key_event {
@@ -129,7 +130,7 @@ impl Editor {
                 if self.buffer.modified && self.status_message.contains("File modified") {
                     self.should_quit = true;
                 } else if self.buffer.modified {
-                    self.status_message = "File modified. Press Ctrl+X again to exit without saving, or Ctrl+O to save".to_string();
+                    self.status_message = "文件已修改。再次按 Ctrl+X 退出不保存，或按 Ctrl+O 保存".to_string();
                 } else {
                     self.should_quit = true;
                 }
@@ -139,17 +140,13 @@ impl Editor {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                if self.buffer.filename.is_some() {
-                    if self.buffer.save()? {
-                        self.status_message = "File saved".to_string();
-                    } else {
-                        self.status_message = "Save failed".to_string();
-                    }
-                } else {
-                    // 进入文件名输入模式
-                    self.file_save_prompt = Some("Enter filename to save:".to_string());
-                    self.file_save_input.clear();
-                }
+                // 总是弹出文件名输入弹窗，初始内容为当前文件名或空
+                let init_filename = self.buffer.filename
+                    .as_ref()
+                    .and_then(|p| p.to_str())
+                    .unwrap_or("");
+                self.file_save_prompt = Some("请输入要保存的文件名:".to_string());
+                self.file_save_input = init_filename.to_string();
             }
             // 切换第二个光标显示/隐藏的快捷键
             KeyEvent {
@@ -159,9 +156,9 @@ impl Editor {
             } => {
                 self.buffer.toggle_secondary_cursor();
                 self.status_message = if self.buffer.cursor_x2.is_some() { 
-                    "Secondary cursor enabled".to_string() 
+                    "多光标已启用".to_string() 
                 } else { 
-                    "Secondary cursor disabled".to_string() 
+                    "多光标已关闭".to_string() 
                 };
             }
             // 使用Alt+方向键移动第二个光标
@@ -313,7 +310,7 @@ impl Editor {
                     )?;
                 }
             } else if file_row == self.buffer.lines.len() && screen_row == 0 {
-                let welcome = "RSNano - Rust implementation of nano text editor";
+                let welcome = "RSNano - Rust实现的nano文本编辑器";
                 if welcome.len() < width as usize {
                     let padding = (width as usize - welcome.len()) / 2;
                     execute!(
@@ -327,27 +324,29 @@ impl Editor {
             }
             execute!(stdout(), cursor::MoveToNextLine(1))?;
         }
-
-        if let Some(prompt) = &self.file_save_prompt {
-            use crossterm::style::{Color, SetForegroundColor, SetBackgroundColor};
-            let (width, height) = self.terminal_size;
-            let popup_y = height / 2;
-            let popup_x = (width as usize / 2).saturating_sub(20) as u16;
-            let _max_len = 40;
-            let input = &self.file_save_input;
-            execute!(
-                stdout(),
-                cursor::MoveTo(popup_x, popup_y),
-                SetBackgroundColor(Color::White),
-                SetForegroundColor(Color::Black),
-                style::Print(format!("{} {}", prompt, input)),
-                ResetColor
-            )?;
-        }
     
         // 菜单栏和帮助栏
         self.draw_status_bar()?;
         self.draw_help_bar()?;
+
+        // 如果弹窗模式，绘制弹窗
+        if let Some(prompt) = &self.file_save_prompt {
+            let (width, height) = self.terminal_size;
+            let popup_y = height / 2;
+            let popup_x = (width as usize / 2).saturating_sub(20) as u16;
+            let input = &self.file_save_input;
+            let popup = format!("{} {}", prompt, input);
+            // 清理弹窗区，避免残留
+            execute!(
+                stdout(),
+                cursor::MoveTo(popup_x, popup_y),
+                terminal::Clear(ClearType::CurrentLine),
+                SetBackgroundColor(Color::White),
+                SetForegroundColor(Color::Black),
+                style::Print(&popup),
+                ResetColor
+            )?;
+        }
     
         // 主光标定位
         let line_number_width = if self.show_line_numbers { 4 } else { 0 };
@@ -368,11 +367,11 @@ impl Editor {
             .as_ref()
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
-            .unwrap_or("[No Name]");
+            .unwrap_or("[无文件名]");
         
-        let modified_indicator = if self.buffer.modified { " [Modified]" } else { "" };
-        let secondary_cursor_indicator = if self.buffer.cursor_x2.is_some() { " [Multi-cursor]" } else { "" };
-        let status = format!(" {} - {} lines{}{}", filename, self.buffer.lines.len(), modified_indicator, secondary_cursor_indicator);
+        let modified_indicator = if self.buffer.modified { " [已修改]" } else { "" };
+        let secondary_cursor_indicator = if self.buffer.cursor_x2.is_some() { " [多光标]" } else { "" };
+        let status = format!(" {} - {} 行{}{}", filename, self.buffer.lines.len(), modified_indicator, secondary_cursor_indicator);
         let status_len = status.len();
         
         execute!(
@@ -382,7 +381,7 @@ impl Editor {
             style::Print(status),
         )?;
         
-        // Fill rest of status bar
+        // 补齐状态栏
         let remaining = width as usize - status_len;
         if remaining > 0 {
             execute!(stdout(), style::Print(" ".repeat(remaining)))?;
@@ -390,7 +389,7 @@ impl Editor {
         
         execute!(stdout(), ResetColor)?;
         
-        // Show status message if any
+        // 显示状态消息
         if !self.status_message.is_empty() {
             execute!(stdout(), cursor::MoveToNextLine(1))?;
             execute!(stdout(), terminal::Clear(ClearType::CurrentLine))?;
@@ -411,7 +410,7 @@ impl Editor {
         execute!(stdout(), cursor::MoveTo(0, height - 1))?;
         execute!(stdout(), terminal::Clear(ClearType::CurrentLine))?;
         
-        let help = "^X Exit  ^O Save  ^C Toggle cursor  Alt+Arrows Move 2nd cursor";
+        let help = "^X 退出  ^O 保存  ^C 多光标  Alt+方向键 移动多光标";
         execute!(
             stdout(),
             SetForegroundColor(Color::Black),
