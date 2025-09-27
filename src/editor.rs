@@ -16,8 +16,9 @@ pub struct Editor {
     show_line_numbers: bool,
     should_quit: bool,
     status_message: String,
-    file_save_prompt: Option<String>, // 是否处于保存文件名输入模式
-    file_save_input: String,          // 保存文件名输入内容
+    file_save_prompt: Option<String>, // 文件名输入模式
+    file_save_input: String,          // 输入的文件名内容
+    exit_confirm_prompt: bool,        // 是否处于退出确认模式
 }
 
 impl Editor {
@@ -39,6 +40,7 @@ impl Editor {
             status_message: String::new(),
             file_save_prompt: None,
             file_save_input: String::new(),
+            exit_confirm_prompt: false,
         })
     }
 
@@ -84,6 +86,36 @@ impl Editor {
 
     /// 处理按键事件
     fn process_key(&mut self, key_event: KeyEvent) -> Result<()> {
+        // 退出确认模式
+        if self.exit_confirm_prompt {
+            match key_event.code {
+                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    // 进入保存文件名输入模式
+                    let init_filename = self.buffer.filename
+                        .as_ref()
+                        .and_then(|p| p.to_str())
+                        .unwrap_or("");
+                    self.file_save_prompt = Some("请输入要保存的文件名:".to_string());
+                    self.file_save_input = init_filename.to_string();
+                    self.exit_confirm_prompt = false;
+                    self.status_message.clear();
+                }
+                KeyCode::Char('n') | KeyCode::Char('N') => {
+                    // 放弃保存，直接退出
+                    self.should_quit = true;
+                    self.exit_confirm_prompt = false;
+                    self.status_message.clear();
+                }
+                KeyCode::Char('c') if key_event.modifiers == KeyModifiers::CONTROL => {
+                    // 取消退出
+                    self.exit_confirm_prompt = false;
+                    self.status_message.clear();
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
+
         // 文件名输入模式
         if self.file_save_prompt.is_some() {
             match key_event.code {
@@ -124,10 +156,9 @@ impl Editor {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                if self.buffer.modified && self.status_message.contains("File modified") {
-                    self.should_quit = true;
-                } else if self.buffer.modified {
-                    self.status_message = "文件已修改。再次按 Ctrl+X 退出不保存，或按 Ctrl+O 保存".to_string();
+                if self.buffer.modified {
+                    self.exit_confirm_prompt = true;
+                    self.status_message = "文件已修改，是否保存？Y=保存 N=不保存 ^C=取消".to_string();
                 } else {
                     self.should_quit = true;
                 }
@@ -322,7 +353,7 @@ impl Editor {
             execute!(stdout(), cursor::MoveToNextLine(1))?;
         }
     
-        // 状态栏和帮助栏（或文件名输入栏）
+        // 状态栏和帮助栏
         self.draw_status_bar()?;
         Ok(())
     }
@@ -365,6 +396,24 @@ impl Editor {
                 execute!(stdout(), style::Print(" ".repeat(remaining)))?;
             }
             execute!(stdout(), ResetColor)?;
+        } else if self.exit_confirm_prompt {
+            // 退出确认模式
+            let msg = "文件已修改，是否保存？Y=保存 N=不保存 ^C=取消";
+            let msg_len = msg.len();
+            execute!(
+                stdout(),
+                SetForegroundColor(Color::Black),
+                style::SetBackgroundColor(Color::White),
+                style::Print(msg),
+            )?;
+            let remaining = width as usize - msg_len;
+            if remaining > 0 {
+                execute!(stdout(), style::Print(" ".repeat(remaining)))?;
+            }
+            execute!(stdout(), ResetColor)?;
+
+            execute!(stdout(), cursor::MoveTo(0, height - 1))?;
+            execute!(stdout(), terminal::Clear(ClearType::CurrentLine))?;
         } else {
             // 普通状态栏
             let filename = self.buffer.filename
