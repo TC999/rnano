@@ -4,6 +4,7 @@
 pub mod buffer;
 pub mod editor;
 pub mod direction;
+pub mod version;
 pub mod args;
 
 // 定义Result类型别名

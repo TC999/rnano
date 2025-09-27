@@ -8,6 +8,7 @@ use crate::buffer::TextBuffer;
 use crate::direction::Direction;
 use crate::args::Args;
 use crate::Result;
+use crate::version::AppInfo; // 新增
 
 pub struct Editor {
     buffer: TextBuffer,
@@ -18,10 +19,11 @@ pub struct Editor {
     file_save_prompt: Option<String>,
     file_save_input: String,
     exit_confirm_prompt: bool,
+    app_info: AppInfo, // 新增
 }
 
 impl Editor {
-    pub fn new(args: Args) -> Result<Self> {
+    pub fn new(args: Args, app_info: AppInfo) -> Result<Self> {
         let buffer = if let Some(file) = &args.file {
             TextBuffer::from_file(file)?
         } else {
@@ -39,6 +41,7 @@ impl Editor {
             file_save_prompt: None,
             file_save_input: String::new(),
             exit_confirm_prompt: false,
+            app_info, // 新增
         })
     }
 
@@ -269,10 +272,36 @@ impl Editor {
         use crossterm::style::{Color, ResetColor, SetForegroundColor, SetBackgroundColor};
         use crossterm::terminal::ClearType;
 
+        // 顶部信息栏
         execute!(stdout(), cursor::MoveTo(0, 0))?;
-        let (width, height) = self.terminal_size;
-        let editor_height = height - 2;
+        execute!(stdout(), terminal::Clear(ClearType::CurrentLine))?;
 
+        let filename = self.buffer.filename
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or("新缓冲区");
+
+        let info_bar = format!(
+            "{} v{}    文件: {}",
+            self.app_info.name,
+            self.app_info.version,
+            filename
+        );
+
+        execute!(
+            stdout(),
+            SetForegroundColor(Color::White),
+            style::SetBackgroundColor(Color::Blue),
+            style::Print(&info_bar),
+            ResetColor
+        )?;
+
+        // 编辑器区域
+        let (width, height) = self.terminal_size;
+        let editor_height = height - 3; // 顶部信息栏占1行
+
+        execute!(stdout(), cursor::MoveTo(0, 1))?;
         for screen_row in 0..editor_height {
             let file_row = screen_row as usize + self.buffer.offset_y;
             execute!(stdout(), terminal::Clear(ClearType::CurrentLine))?;
@@ -317,18 +346,6 @@ impl Editor {
                         ResetColor
                     )?;
                 }
-            } else if file_row == self.buffer.lines.len() && screen_row == 0 {
-                let welcome = "RSNano - Rust实现的nano文本编辑器";
-                if welcome.len() < width as usize {
-                    let padding = (width as usize - welcome.len()) / 2;
-                    execute!(
-                        stdout(),
-                        cursor::MoveTo(padding as u16, screen_row),
-                        SetForegroundColor(Color::Blue),
-                        style::Print(welcome),
-                        ResetColor
-                    )?;
-                }
             }
             execute!(stdout(), cursor::MoveToNextLine(1))?;
         }
@@ -338,6 +355,7 @@ impl Editor {
 
     fn draw_status_bar(&self) -> Result<()> {
         let (width, height) = self.terminal_size;
+        // 状态栏在倒数第二行
         execute!(stdout(), cursor::MoveTo(0, height - 2))?;
         execute!(stdout(), terminal::Clear(ClearType::CurrentLine))?;
 
