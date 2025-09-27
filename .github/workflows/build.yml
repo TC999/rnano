@@ -6,6 +6,8 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@v4
       - name: 编译
