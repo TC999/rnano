@@ -1,0 +1,75 @@
+name: 发行
+
+on:
+  workflow_dispatch:
+      inputs:
+        name:
+          description: '发行版名称'
+          required: true
+          type: string
+        tag_name:
+          description: '标签名称'
+          required: true
+          type: string
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 编译
+        run: cargo build --release
+      - name: 上传编译产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: target/release/rsnano.exe
+
+  build-ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+      - name: 安装 Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: 编译项目
+        run: cargo build --release
+      - name: 上传编译产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ubuntu-build
+          path: target/release/rsnano
+
+  release:
+    name: 发行
+    needs: [build-windows, build-ubuntu]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: 下载文件
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: 移动文件
+        run: |
+          mv artifacts/windows-build/rsnano.exe rsnano.exe
+          mv artifacts/ubuntu-build/rsnano rsnano
+      
+      - name: 自动发布发行版
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ inputs.rname }}
+          tag_name: ${{ inputs.tag_name }}
+          draft: false
+          make_latest: true
+          files: |
+            rsnano.exe
+            rsnano
