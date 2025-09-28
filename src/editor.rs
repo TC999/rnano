@@ -338,6 +338,13 @@ impl Editor {
             ResetColor
         )?;
 
+        // 帮助
+
+        if self.show_help_page {
+            self.draw_help_page()?;
+            return Ok(());
+        }
+
         // 编辑器区域
         let (width, height) = self.terminal_size;
         let editor_height = height - 3; // 顶部信息栏占1行
@@ -498,6 +505,34 @@ impl Editor {
             execute!(stdout(), style::Print(" ".repeat(remaining)))?;
         }
         execute!(stdout(), ResetColor)?;
+        Ok(())
+    }
+
+    fn draw_help_page(&self) -> Result<()> {
+        let (_width, height) = self.terminal_size;
+        execute!(
+            stdout(),
+            cursor::MoveTo(0, 0),
+            terminal::Clear(ClearType::All)
+        )?;
+
+        let help_lines = [
+            "RSNano 帮助页面",
+            "",
+            "^X 退出编辑器",
+            "^O 保存文件",
+            "^C 多光标模式开/关",
+            "Alt+方向键 移动多光标",
+            "^G 打开帮助页面",
+            "",
+            "按任意键返回编辑器",
+        ];
+
+        for (i, line) in help_lines.iter().enumerate() {
+            if i < height as usize {
+                execute!(stdout(), cursor::MoveTo(0, i as u16), style::Print(line))?;
+            }
+        }
         Ok(())
     }
 }
