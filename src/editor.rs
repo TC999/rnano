@@ -3,15 +3,12 @@ mod prompt;
 mod status;
 mod ui;
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use crossterm::style::{Color, ResetColor, SetForegroundColor};
 use crossterm::terminal::ClearType;
 use crossterm::{cursor, execute, style, terminal};
 use std::io::stdout;
 
 use crate::args::Args;
 use crate::buffer::TextBuffer;
-use crate::direction::Direction;
 use crate::version::AppInfo;
 use crate::Result; // 新增
 
