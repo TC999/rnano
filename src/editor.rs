@@ -1,14 +1,14 @@
-use crossterm::{cursor, event, style, terminal, execute};
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, KeyEventKind};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::style::{Color, ResetColor, SetForegroundColor};
 use crossterm::terminal::{ClearType, EnterAlternateScreen, LeaveAlternateScreen};
-use std::io::{stdout};
+use crossterm::{cursor, event, execute, style, terminal};
+use std::io::stdout;
 
+use crate::args::Args;
 use crate::buffer::TextBuffer;
 use crate::direction::Direction;
-use crate::args::Args;
-use crate::Result;
-use crate::version::AppInfo; // 新增
+use crate::version::AppInfo;
+use crate::Result; // 新增
 
 pub struct Editor {
     buffer: TextBuffer,
@@ -20,6 +20,7 @@ pub struct Editor {
     file_save_input: String,
     exit_confirm_prompt: bool,
     app_info: AppInfo, // 新增
+    show_help_page: bool,
 }
 
 impl Editor {
@@ -42,6 +43,7 @@ impl Editor {
             file_save_input: String::new(),
             exit_confirm_prompt: false,
             app_info, // 新增
+            show_help_page: false,
         })
     }
 
@@ -86,11 +88,14 @@ impl Editor {
         if self.exit_confirm_prompt {
             match key_event.code {
                 KeyCode::Char('y') | KeyCode::Char('Y') => {
-                    let init_filename = self.buffer.filename
+                    let init_filename = self
+                        .buffer
+                        .filename
                         .as_ref()
                         .and_then(|p| p.to_str())
                         .unwrap_or("");
-                    self.file_save_prompt = Some("请输入要保存的文件名（按 ESC 取消）:".to_string());
+                    self.file_save_prompt =
+                        Some("请输入要保存的文件名（按 ESC 取消）:".to_string());
                     self.file_save_input = init_filename.to_string();
                     self.exit_confirm_prompt = false;
                     self.status_message.clear();
@@ -140,6 +145,31 @@ impl Editor {
             return Ok(());
         }
 
+        // 显示帮助页面
+        // 如果正在显示帮助页面，任意按键关闭帮助页面
+        if self.show_help_page {
+            match key_event.code {
+                KeyCode::Esc | KeyCode::Char(_) | KeyCode::Enter | KeyCode::Backspace => {
+                    self.show_help_page = false;
+                    self.status_message.clear();
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
+
+        // Ctrl+G 打开帮助页面
+        if let KeyEvent {
+            code: KeyCode::Char('g'),
+            modifiers: KeyModifiers::CONTROL,
+            ..
+        } = key_event
+        {
+            self.show_help_page = true;
+            self.status_message = "按任意键返回编辑器".to_string();
+            return Ok(());
+        }
+
         match key_event {
             KeyEvent {
                 code: KeyCode::Char('x'),
@@ -148,7 +178,8 @@ impl Editor {
             } => {
                 if self.buffer.modified {
                     self.exit_confirm_prompt = true;
-                    self.status_message = "文件已修改，是否保存？Y=保存 N=不保存 ^C=取消".to_string();
+                    self.status_message =
+                        "文件已修改，是否保存？Y=保存 N=不保存 ^C=取消".to_string();
                 } else {
                     self.should_quit = true;
                 }
@@ -158,7 +189,9 @@ impl Editor {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                let init_filename = self.buffer.filename
+                let init_filename = self
+                    .buffer
+                    .filename
                     .as_ref()
                     .and_then(|p| p.to_str())
                     .unwrap_or("");
@@ -171,10 +204,10 @@ impl Editor {
                 ..
             } => {
                 self.buffer.toggle_secondary_cursor();
-                self.status_message = if self.buffer.cursor_x2.is_some() { 
-                    "多光标已启用".to_string() 
-                } else { 
-                    "多光标已关闭".to_string() 
+                self.status_message = if self.buffer.cursor_x2.is_some() {
+                    "多光标已启用".to_string()
+                } else {
+                    "多光标已关闭".to_string()
                 };
             }
             KeyEvent {
@@ -182,56 +215,64 @@ impl Editor {
                 modifiers: KeyModifiers::ALT,
                 ..
             } => {
-                self.buffer.move_cursor(Direction::Up, self.terminal_size, true);
+                self.buffer
+                    .move_cursor(Direction::Up, self.terminal_size, true);
             }
             KeyEvent {
                 code: KeyCode::Down,
                 modifiers: KeyModifiers::ALT,
                 ..
             } => {
-                self.buffer.move_cursor(Direction::Down, self.terminal_size, true);
+                self.buffer
+                    .move_cursor(Direction::Down, self.terminal_size, true);
             }
             KeyEvent {
                 code: KeyCode::Left,
                 modifiers: KeyModifiers::ALT,
                 ..
             } => {
-                self.buffer.move_cursor(Direction::Left, self.terminal_size, true);
+                self.buffer
+                    .move_cursor(Direction::Left, self.terminal_size, true);
             }
             KeyEvent {
                 code: KeyCode::Right,
                 modifiers: KeyModifiers::ALT,
                 ..
             } => {
-                self.buffer.move_cursor(Direction::Right, self.terminal_size, true);
+                self.buffer
+                    .move_cursor(Direction::Right, self.terminal_size, true);
             }
             KeyEvent {
                 code: KeyCode::Up,
                 modifiers: KeyModifiers::NONE,
                 ..
             } => {
-                self.buffer.move_cursor(Direction::Up, self.terminal_size, false);
+                self.buffer
+                    .move_cursor(Direction::Up, self.terminal_size, false);
             }
             KeyEvent {
                 code: KeyCode::Down,
                 modifiers: KeyModifiers::NONE,
                 ..
             } => {
-                self.buffer.move_cursor(Direction::Down, self.terminal_size, false);
+                self.buffer
+                    .move_cursor(Direction::Down, self.terminal_size, false);
             }
             KeyEvent {
                 code: KeyCode::Left,
                 modifiers: KeyModifiers::NONE,
                 ..
             } => {
-                self.buffer.move_cursor(Direction::Left, self.terminal_size, false);
+                self.buffer
+                    .move_cursor(Direction::Left, self.terminal_size, false);
             }
             KeyEvent {
                 code: KeyCode::Right,
                 modifiers: KeyModifiers::NONE,
                 ..
             } => {
-                self.buffer.move_cursor(Direction::Right, self.terminal_size, false);
+                self.buffer
+                    .move_cursor(Direction::Right, self.terminal_size, false);
             }
             KeyEvent {
                 code: KeyCode::Enter,
@@ -267,16 +308,18 @@ impl Editor {
     }
 
     fn refresh_screen(&mut self) -> Result<()> {
-        use std::io::stdout;
-        use crossterm::{cursor, style, terminal, execute};
-        use crossterm::style::{Color, ResetColor, SetForegroundColor, SetBackgroundColor};
+        use crossterm::style::{Color, ResetColor, SetBackgroundColor, SetForegroundColor};
         use crossterm::terminal::ClearType;
+        use crossterm::{cursor, execute, style, terminal};
+        use std::io::stdout;
 
         // 顶部信息栏
         execute!(stdout(), cursor::MoveTo(0, 0))?;
         execute!(stdout(), terminal::Clear(ClearType::CurrentLine))?;
 
-        let filename = self.buffer.filename
+        let filename = self
+            .buffer
+            .filename
             .as_ref()
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
@@ -284,9 +327,7 @@ impl Editor {
 
         let info_bar = format!(
             "{} v{}    文件: {}",
-            self.app_info.name,
-            self.app_info.version,
-            filename
+            self.app_info.name, self.app_info.version, filename
         );
 
         execute!(
@@ -329,15 +370,13 @@ impl Editor {
                             ResetColor
                         )?;
                     } else {
-                        execute!(
-                            stdout(),
-                            style::Print(ch)
-                        )?;
+                        execute!(stdout(), style::Print(ch))?;
                     }
                 }
                 if self.buffer.cursor_y == file_row
                     && self.buffer.cursor_x == line.chars().count()
-                    && end == line.chars().count() {
+                    && end == line.chars().count()
+                {
                     execute!(
                         stdout(),
                         SetBackgroundColor(Color::Yellow),
@@ -391,18 +430,31 @@ impl Editor {
             execute!(stdout(), ResetColor)?;
         } else {
             // 普通状态栏：文件名、行数、修改状态、多光标、操作提示
-            let filename = self.buffer.filename
+            let filename = self
+                .buffer
+                .filename
                 .as_ref()
                 .and_then(|p| p.file_name())
                 .and_then(|n| n.to_str())
                 .unwrap_or("[无文件名]");
-            let modified_indicator = if self.buffer.modified && !self.buffer.modified_lines_set.is_empty() {
-                format!(" [已修改 {} 行]", self.buffer.modified_lines_set.len())
+            let modified_indicator =
+                if self.buffer.modified && !self.buffer.modified_lines_set.is_empty() {
+                    format!(" [已修改 {} 行]", self.buffer.modified_lines_set.len())
+                } else {
+                    "".to_string()
+                };
+            let secondary_cursor_indicator = if self.buffer.cursor_x2.is_some() {
+                " [多光标]"
             } else {
-                "".to_string()
+                ""
             };
-            let secondary_cursor_indicator = if self.buffer.cursor_x2.is_some() { " [多光标]" } else { "" };
-            let mut status = format!(" {} - {} 行{}{}", filename, self.buffer.lines.len(), modified_indicator, secondary_cursor_indicator);
+            let mut status = format!(
+                " {} - {} 行{}{}",
+                filename,
+                self.buffer.lines.len(),
+                modified_indicator,
+                secondary_cursor_indicator
+            );
 
             // 状态栏右侧显示操作状态提示（如保存成功、失败等）
             if !self.status_message.is_empty() {
