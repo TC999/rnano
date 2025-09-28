@@ -91,11 +91,6 @@ impl Editor {
                 }
                 continue;
             }
-
-            ui::refresh_screen(self)?;
-            if self.should_quit {
-                break;
-            }
         }
         Ok(())
     }
