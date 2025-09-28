@@ -3,6 +3,8 @@ name: 编译
 on:
   workflow_dispatch:
   push:
+    paths-ignore:
+      - 'README.md'
 
 env:
   CARGO_TERM_COLOR: always
