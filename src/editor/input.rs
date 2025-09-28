@@ -53,6 +53,14 @@ pub fn process_key(editor: &mut Editor, key_event: KeyEvent) -> Result<()> {
             };
         }
         KeyEvent {
+            code: KeyCode::Char('g'),
+            modifiers: KeyModifiers::CONTROL,
+            ..
+        } => {
+            editor.show_help_page = true;
+            editor.help_page_drawn = false; // 标记帮助页需要重新绘制
+        }
+        KeyEvent {
             code: KeyCode::Up,
             modifiers: KeyModifiers::ALT,
             ..

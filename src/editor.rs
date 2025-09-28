@@ -80,10 +80,29 @@ impl Editor {
                     self.help_page_drawn = false;
                 }
             }
+
+            if self.show_help_page {
+                if !self.help_page_drawn {
+                    self.draw_help_page()?;
+                    self.help_page_drawn = true;
+                }
+                if crossterm::event::poll(std::time::Duration::from_millis(50))? {
+                    if let crossterm::event::Event::Key(_) = crossterm::event::read()? {
+                        self.show_help_page = false;
+                        self.help_page_drawn = false;
+                    }
+                }
+                continue;
+            }
+
+            ui::refresh_screen(self)?;
+            if self.should_quit {
+                break;
+            }
         }
         Ok(())
     }
-  
+
     fn draw_help_page(&self) -> Result<()> {
         let (_width, height) = self.terminal_size;
         execute!(
