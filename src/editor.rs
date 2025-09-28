@@ -3,10 +3,10 @@ mod prompt;
 mod status;
 mod ui;
 
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crossterm::style::{Color, ResetColor, SetForegroundColor};
-use crossterm::terminal::{ClearType, EnterAlternateScreen, LeaveAlternateScreen};
-use crossterm::{cursor, event, execute, style, terminal};
+use crossterm::terminal::ClearType;
+use crossterm::{cursor, execute, style, terminal};
 use std::io::stdout;
 
 use crate::args::Args;
@@ -68,7 +68,7 @@ impl Editor {
             if crossterm::event::poll(std::time::Duration::from_millis(50))? {
                 if let crossterm::event::Event::Key(key_event) = crossterm::event::read()? {
                     if key_event.kind == crossterm::event::KeyEventKind::Press {
-                        self.process_key(key_event)?;
+                        input::process_key(self, key_event)?;
                     }
                 }
             }
@@ -84,232 +84,6 @@ impl Editor {
         Ok(())
     }
   
-    fn process_key(&mut self, key_event: KeyEvent) -> Result<()> {
-        // 退出确认模式
-        if self.exit_confirm_prompt {
-            match key_event.code {
-                KeyCode::Char('y') | KeyCode::Char('Y') => {
-                    let init_filename = self
-                        .buffer
-                        .filename
-                        .as_ref()
-                        .and_then(|p| p.to_str())
-                        .unwrap_or("");
-                    self.file_save_prompt =
-                        Some("请输入要保存的文件名（按 ESC 取消）:".to_string());
-                    self.file_save_input = init_filename.to_string();
-                    self.exit_confirm_prompt = false;
-                    self.status_message.clear();
-                }
-                KeyCode::Char('n') | KeyCode::Char('N') => {
-                    self.should_quit = true;
-                    self.exit_confirm_prompt = false;
-                    self.status_message.clear();
-                }
-                KeyCode::Char('c') if key_event.modifiers == KeyModifiers::CONTROL => {
-                    self.exit_confirm_prompt = false;
-                    self.status_message.clear();
-                }
-                _ => {}
-            }
-            return Ok(());
-        }
-
-        // 文件名输入模式
-        if self.file_save_prompt.is_some() {
-            match key_event.code {
-                KeyCode::Enter => {
-                    let filename = self.file_save_input.trim();
-                    if !filename.is_empty() {
-                        self.buffer.filename = Some(std::path::PathBuf::from(filename));
-                        let modified_count = self.buffer.save()?; // 获取实际修改行数
-                        self.status_message = format!("已保存，已修改 {} 行", modified_count);
-                    } else {
-                        self.status_message = "文件名不能为空".to_string();
-                    }
-                    self.file_save_prompt = None;
-                    self.file_save_input.clear();
-                }
-                KeyCode::Esc => {
-                    self.file_save_prompt = None;
-                    self.file_save_input.clear();
-                    self.status_message = "已取消保存".to_string();
-                }
-                KeyCode::Backspace => {
-                    self.file_save_input.pop();
-                }
-                KeyCode::Char(ch) => {
-                    self.file_save_input.push(ch);
-                }
-                _ => {}
-            }
-            return Ok(());
-        }
-
-        // 显示帮助页面
-        // 如果正在显示帮助页面，任意按键关闭帮助页面
-        if self.show_help_page {
-            match key_event.code {
-                KeyCode::Esc | KeyCode::Char(_) | KeyCode::Enter | KeyCode::Backspace => {
-                    self.show_help_page = false;
-                    self.help_page_drawn = false; // 重置帮助页绘制状态
-                    self.status_message.clear();
-                }
-                _ => {}
-            }
-            return Ok(());
-        }
-
-        // Ctrl+G 打开帮助页面
-        if let KeyEvent {
-            code: KeyCode::Char('g'),
-            modifiers: KeyModifiers::CONTROL,
-            ..
-        } = key_event
-        {
-            self.show_help_page = true;
-            self.help_page_drawn = false; // 标记需要重新绘制帮助页
-            self.status_message = "按任意键返回编辑器".to_string();
-            return Ok(());
-        }
-
-        match key_event {
-            KeyEvent {
-                code: KeyCode::Char('x'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => {
-                if self.buffer.modified {
-                    self.exit_confirm_prompt = true;
-                    self.status_message =
-                        "文件已修改，是否保存？Y=保存 N=不保存 ^C=取消".to_string();
-                } else {
-                    self.should_quit = true;
-                }
-            }
-            KeyEvent {
-                code: KeyCode::Char('o'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => {
-                let init_filename = self
-                    .buffer
-                    .filename
-                    .as_ref()
-                    .and_then(|p| p.to_str())
-                    .unwrap_or("");
-                self.file_save_prompt = Some("请输入要保存的文件名（按 ESC 取消）:".to_string());
-                self.file_save_input = init_filename.to_string();
-            }
-            KeyEvent {
-                code: KeyCode::Char('c'),
-                modifiers: KeyModifiers::ALT,
-                ..
-            } => {
-                self.buffer.toggle_secondary_cursor();
-                self.status_message = if self.buffer.cursor_x2.is_some() {
-                    "多光标已启用".to_string()
-                } else {
-                    "多光标已关闭".to_string()
-                };
-            }
-            KeyEvent {
-                code: KeyCode::Up,
-                modifiers: KeyModifiers::ALT,
-                ..
-            } => {
-                self.buffer
-                    .move_cursor(Direction::Up, self.terminal_size, true);
-            }
-            KeyEvent {
-                code: KeyCode::Down,
-                modifiers: KeyModifiers::ALT,
-                ..
-            } => {
-                self.buffer
-                    .move_cursor(Direction::Down, self.terminal_size, true);
-            }
-            KeyEvent {
-                code: KeyCode::Left,
-                modifiers: KeyModifiers::ALT,
-                ..
-            } => {
-                self.buffer
-                    .move_cursor(Direction::Left, self.terminal_size, true);
-            }
-            KeyEvent {
-                code: KeyCode::Right,
-                modifiers: KeyModifiers::ALT,
-                ..
-            } => {
-                self.buffer
-                    .move_cursor(Direction::Right, self.terminal_size, true);
-            }
-            KeyEvent {
-                code: KeyCode::Up,
-                modifiers: KeyModifiers::NONE,
-                ..
-            } => {
-                self.buffer
-                    .move_cursor(Direction::Up, self.terminal_size, false);
-            }
-            KeyEvent {
-                code: KeyCode::Down,
-                modifiers: KeyModifiers::NONE,
-                ..
-            } => {
-                self.buffer
-                    .move_cursor(Direction::Down, self.terminal_size, false);
-            }
-            KeyEvent {
-                code: KeyCode::Left,
-                modifiers: KeyModifiers::NONE,
-                ..
-            } => {
-                self.buffer
-                    .move_cursor(Direction::Left, self.terminal_size, false);
-            }
-            KeyEvent {
-                code: KeyCode::Right,
-                modifiers: KeyModifiers::NONE,
-                ..
-            } => {
-                self.buffer
-                    .move_cursor(Direction::Right, self.terminal_size, false);
-            }
-            KeyEvent {
-                code: KeyCode::Enter,
-                modifiers: KeyModifiers::NONE,
-                ..
-            } => {
-                self.buffer.insert_newline();
-            }
-            KeyEvent {
-                code: KeyCode::Backspace,
-                modifiers: KeyModifiers::NONE,
-                ..
-            } => {
-                self.buffer.delete_char();
-            }
-            KeyEvent {
-                code: KeyCode::Char(ch),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } if self.buffer.cursor_x2.is_some() && self.buffer.cursor_y2.is_some() => {
-                self.buffer.insert_char_at_both_cursors(ch);
-            }
-            KeyEvent {
-                code: KeyCode::Char(ch),
-                modifiers,
-                ..
-            } if modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::SHIFT => {
-                self.buffer.insert_char(ch);
-            }
-            _ => {}
-        }
-        Ok(())
-    }
-
     fn refresh_screen(&mut self) -> Result<()> {
         use crossterm::style::{Color, ResetColor, SetBackgroundColor, SetForegroundColor};
         use crossterm::terminal::ClearType;
