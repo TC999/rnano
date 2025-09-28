@@ -162,7 +162,7 @@ impl Editor {
                     .as_ref()
                     .and_then(|p| p.to_str())
                     .unwrap_or("");
-                self.file_save_prompt = Some("请输入要保存的文件名:".to_string());
+                self.file_save_prompt = Some("请输入要保存的文件名（按 ESC 取消）:".to_string());
                 self.file_save_input = init_filename.to_string();
             }
             KeyEvent {
