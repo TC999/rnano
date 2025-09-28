@@ -58,6 +58,21 @@ impl Editor {
 
     fn main_loop(&mut self) -> Result<()> {
         loop {
+            // Handle help page display separately from main loop
+            if self.show_help_page {
+                if !self.help_page_drawn {
+                    self.draw_help_page()?;
+                    self.help_page_drawn = true;
+                }
+                if crossterm::event::poll(std::time::Duration::from_millis(50))? {
+                    if let crossterm::event::Event::Key(_) = crossterm::event::read()? {
+                        self.show_help_page = false;
+                        self.help_page_drawn = false;
+                    }
+                }
+                continue;
+            }
+
             ui::refresh_screen(self)?;
             if self.should_quit {
                 break;
@@ -76,20 +91,6 @@ impl Editor {
                 if self.show_help_page {
                     self.help_page_drawn = false;
                 }
-            }
-
-            if self.show_help_page {
-                if !self.help_page_drawn {
-                    self.draw_help_page()?;
-                    self.help_page_drawn = true;
-                }
-                if crossterm::event::poll(std::time::Duration::from_millis(50))? {
-                    if let crossterm::event::Event::Key(_) = crossterm::event::read()? {
-                        self.show_help_page = false;
-                        self.help_page_drawn = false;
-                    }
-                }
-                continue;
             }
         }
         Ok(())
@@ -120,6 +121,9 @@ impl Editor {
                 execute!(stdout(), cursor::MoveTo(0, i as u16), style::Print(line))?;
             }
         }
+        // Ensure the output is immediately visible
+        use std::io::Write;
+        std::io::stdout().flush()?;
         Ok(())
     }
 }
