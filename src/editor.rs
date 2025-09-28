@@ -5,7 +5,6 @@ mod ui;
 
 use crate::args::Args;
 use crate::buffer::TextBuffer;
-use crate::direction::Direction;
 use crate::version::AppInfo;
 use crate::Result;
 

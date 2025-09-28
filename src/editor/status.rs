@@ -1,6 +1,6 @@
 use crate::editor::Editor;
 use crate::Result;
-use crossterm::style::{Color, ResetColor, SetBackgroundColor, SetForegroundColor};
+use crossterm::style::{Color, ResetColor, SetForegroundColor};
 use crossterm::terminal::ClearType;
 use crossterm::{cursor, execute, style, terminal};
 use std::io::stdout;
