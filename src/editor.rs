@@ -21,6 +21,7 @@ pub struct Editor {
     exit_confirm_prompt: bool,
     app_info: AppInfo, // 新增
     show_help_page: bool,
+    help_page_drawn: bool, // 跟踪帮助页是否已绘制
 }
 
 impl Editor {
@@ -44,6 +45,7 @@ impl Editor {
             exit_confirm_prompt: false,
             app_info, // 新增
             show_help_page: false,
+            help_page_drawn: false,
         })
     }
 
@@ -78,6 +80,10 @@ impl Editor {
             let new_size = terminal::size()?;
             if new_size != self.terminal_size {
                 self.terminal_size = new_size;
+                // 如果正在显示帮助页且终端大小改变，需要重新绘制
+                if self.show_help_page {
+                    self.help_page_drawn = false;
+                }
             }
         }
         Ok(())
@@ -151,6 +157,7 @@ impl Editor {
             match key_event.code {
                 KeyCode::Esc | KeyCode::Char(_) | KeyCode::Enter | KeyCode::Backspace => {
                     self.show_help_page = false;
+                    self.help_page_drawn = false; // 重置帮助页绘制状态
                     self.status_message.clear();
                 }
                 _ => {}
@@ -166,6 +173,7 @@ impl Editor {
         } = key_event
         {
             self.show_help_page = true;
+            self.help_page_drawn = false; // 标记需要重新绘制帮助页
             self.status_message = "按任意键返回编辑器".to_string();
             return Ok(());
         }
@@ -338,10 +346,13 @@ impl Editor {
             ResetColor
         )?;
 
-        // 帮助
-
+        // 帮助页面处理
         if self.show_help_page {
-            self.draw_help_page()?;
+            // 只有在帮助页面还未绘制时才绘制，避免频闪
+            if !self.help_page_drawn {
+                self.draw_help_page()?;
+                self.help_page_drawn = true;
+            }
             return Ok(());
         }
 
