@@ -52,6 +52,16 @@ pub fn process_key(editor: &mut Editor, key_event: KeyEvent) -> Result<()> {
                 "多光标已关闭".to_string()
             };
         }
+        // Ctrl+G 打开帮助页面
+        KeyEvent {
+            code: KeyCode::Char('g'),
+            modifiers: KeyModifiers::CONTROL,
+            ..
+        } => {
+            editor.show_help_page = true;
+            editor.status_message = "按任意键返回编辑器".to_string();
+            return Ok(());
+        }
         KeyEvent {
             code: KeyCode::Up,
             modifiers: KeyModifiers::ALT,
