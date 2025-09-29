@@ -1,0 +1,19 @@
+name: 屎山代码检测
+
+on:
+  workflow_dispatch:
+
+jobs:
+  Check:
+    name: 检测屎山代码
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+      - name: 安装检测工具
+        run: |
+          go install github.com/Done-0/fuck-u-code/cmd/fuck-u-code@latest
+
+      - name: 检测
+        run: |
+          fuck-u-code analyze --lang zh_CN --markdown > report.md
