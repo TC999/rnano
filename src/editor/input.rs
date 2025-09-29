@@ -59,6 +59,7 @@ pub fn process_key(editor: &mut Editor, key_event: KeyEvent) -> Result<()> {
             ..
         } => {
             editor.show_help_page = true;
+            editor.help_page_drawn = false; // 确保下次会重新绘制帮助页面
             editor.status_message = "按任意键返回编辑器".to_string();
             return Ok(());
         }
