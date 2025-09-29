@@ -95,7 +95,12 @@ impl Editor {
         loop {
             // 如果正在显示帮助页面
             if self.show_help_page {
-                self.draw_help_page()?;
+                // 只在第一次显示或尺寸变化时绘制帮助页面
+                if !self.help_page_drawn {
+                    self.draw_help_page()?;
+                    self.help_page_drawn = true;
+                }
+                
                 // 按任意键关闭帮助页面
                 if event::poll(std::time::Duration::from_millis(50))? {
                     if let event::Event::Key(key_event) = event::read()? {
@@ -106,7 +111,12 @@ impl Editor {
                                 | KeyCode::Enter
                                 | KeyCode::Backspace => {
                                     self.show_help_page = false;
+                                    self.help_page_drawn = false; // 重置绘制状态
                                     self.status_message.clear();
+                                    // 清除屏幕，准备返回编辑器模式
+                                    use crossterm::{execute, terminal};
+                                    use std::io::stdout;
+                                    execute!(stdout(), terminal::Clear(terminal::ClearType::All))?;
                                 }
                                 _ => {}
                             }
