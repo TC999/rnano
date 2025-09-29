@@ -17,3 +17,9 @@ jobs:
       - name: 检测
         run: |
           fuck-u-code analyze --lang zh_CN --markdown > report.md
+
+      - name: 上传报告
+        uses: actions/upload-artifact@v4
+        with:
+          name: report
+          path: report.md
