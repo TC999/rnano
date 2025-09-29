@@ -99,15 +99,17 @@ impl Editor {
                 // 按任意键关闭帮助页面
                 if event::poll(std::time::Duration::from_millis(50))? {
                     if let event::Event::Key(key_event) = event::read()? {
-                        match key_event.code {
-                            KeyCode::Esc
-                            | KeyCode::Char(_)
-                            | KeyCode::Enter
-                            | KeyCode::Backspace => {
-                                self.show_help_page = false;
-                                self.status_message.clear();
+                        if key_event.kind == event::KeyEventKind::Press {
+                            match key_event.code {
+                                KeyCode::Esc
+                                | KeyCode::Char(_)
+                                | KeyCode::Enter
+                                | KeyCode::Backspace => {
+                                    self.show_help_page = false;
+                                    self.status_message.clear();
+                                }
+                                _ => {}
                             }
-                            _ => {}
                         }
                     }
                 }
