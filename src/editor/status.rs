@@ -1,6 +1,6 @@
 use crate::editor::Editor;
 use crate::Result;
-use crossterm::style::{Color, ResetColor, SetBackgroundColor, SetForegroundColor};
+use crossterm::style::{Color, ResetColor, SetForegroundColor};
 use crossterm::terminal::ClearType;
 use crossterm::{cursor, execute, style, terminal};
 use std::io::stdout;
@@ -95,7 +95,7 @@ pub fn draw_status_bar(editor: &Editor) -> Result<()> {
     // 最下方帮助栏始终不被覆盖
     execute!(stdout(), cursor::MoveTo(0, height - 1))?;
     execute!(stdout(), terminal::Clear(ClearType::CurrentLine))?;
-    let help = "^X 退出  ^O 保存  ^C 多光标  Alt+方向键 移动多光标";
+    let help = "^X 退出  ^O 保存  ^G 帮助  ^C 多光标  Alt+方向键 移动多光标";
     execute!(
         stdout(),
         SetForegroundColor(Color::Black),
