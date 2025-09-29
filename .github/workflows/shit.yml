@@ -7,6 +7,8 @@ jobs:
   Check:
     name: 检测屎山代码
     runs-on: ubuntu-latest
+    env:
+      PATH: ${{ env.PATH }}:$(go env GOPATH)/bin
     steps:
       - name: 拉取代码
         uses: actions/checkout@v4
