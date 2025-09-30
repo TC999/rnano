@@ -22,7 +22,7 @@ pub fn draw_status_bar(editor: &Editor) -> Result<()> {
             style::SetBackgroundColor(Color::White),
             style::Print(&msg),
         )?;
-        let remaining = width as usize - msg_len;
+        let remaining = (width as usize).saturating_sub(msg_len);
         if remaining > 0 {
             execute!(stdout(), style::Print(" ".repeat(remaining)))?;
         }
@@ -36,7 +36,7 @@ pub fn draw_status_bar(editor: &Editor) -> Result<()> {
             style::SetBackgroundColor(Color::White),
             style::Print(msg),
         )?;
-        let remaining = width as usize - msg_len;
+        let remaining = (width as usize).saturating_sub(msg_len);
         if remaining > 0 {
             execute!(stdout(), style::Print(" ".repeat(remaining)))?;
         }
@@ -72,14 +72,14 @@ pub fn draw_status_bar(editor: &Editor) -> Result<()> {
         if !editor.status_message.is_empty() {
             let left_len = status.len();
             let right_msg = format!("  {}", editor.status_message);
-            let space = width as usize - left_len - right_msg.len();
+            let space = (width as usize).saturating_sub(left_len + right_msg.len());
             if space > 0 {
                 status.push_str(&" ".repeat(space));
             }
             status.push_str(&right_msg);
         } else {
             let status_len = status.len();
-            let remaining = width as usize - status_len;
+            let remaining = (width as usize).saturating_sub(status_len);
             if remaining > 0 {
                 status.push_str(&" ".repeat(remaining));
             }
@@ -102,7 +102,7 @@ pub fn draw_status_bar(editor: &Editor) -> Result<()> {
         style::SetBackgroundColor(Color::White),
         style::Print(help),
     )?;
-    let remaining = width as usize - help.len();
+    let remaining = (width as usize).saturating_sub(help.len());
     if remaining > 0 {
         execute!(stdout(), style::Print(" ".repeat(remaining)))?;
     }
